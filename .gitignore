@@ -1,0 +1,18 @@
+# Chrome debug profile (contains sensitive data)
+chrome_debug_profile/
+
+# Data directory (screenshots, progress files)
+data/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
