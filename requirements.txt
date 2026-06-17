@@ -1,0 +1,17 @@
+# Core runtime dependencies for the DataExpert quiz/scraper scripts.
+# Install with:  pip install -r requirements.txt
+playwright>=1.40,<2
+browser-cookie3>=0.19
+requests>=2.31
+
+# Optional — only browser_scraper.py uses this (stealth/undetected scraping).
+# Uncomment if you need it:
+# nodriver>=0.32
+
+# Note: Playwright-based scripts also need a browser. Either run
+#   playwright install chromium
+# or connect to an already-running Chrome started with
+#   --remote-debugging-port=9222  (see README).
+#
+# run_quizzes_v2.py additionally shells out to the `claude` CLI, which must be
+# installed and authenticated separately.

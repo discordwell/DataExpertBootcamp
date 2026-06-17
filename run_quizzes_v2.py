@@ -578,48 +578,10 @@ HAVING SUM(amount) > 1000"""
     return f"SELECT *\nFROM {table}\nLIMIT 100"
 
 
-def get_answer(question: str, options: list) -> int:
-    """Smart answer selection for multiple choice."""
-    q = question.lower()
-    opts = [o.lower() for o in options]
-
-    # Fact vs Dimension
-    if "fact" in q and ("larger" in q or "size" in q):
-        for i, o in enumerate(opts):
-            if "granular" in o or "more row" in o or "event" in o: return i
-
-    # SCD
-    if "slowly changing" in q or "scd" in q:
-        for i, o in enumerate(opts):
-            if "type 2" in o or "history" in o or "track" in o: return i
-
-    # Cumulative design
-    if "cumulative" in q:
-        for i, o in enumerate(opts):
-            if "running" in o or "over time" in o or "aggregate" in o: return i
-
-    # Cardinality
-    if "cardinality" in q:
-        for i, o in enumerate(opts):
-            if "distinguish" in o or "uniqueness" in o: return i
-
-    # HAVING
-    if "having" in q:
-        for i, o in enumerate(opts):
-            if "having" in o or "after group" in o or "filter group" in o: return i
-
-    # NULL and AVG
-    if "null" in q and "avg" in q:
-        for i, o in enumerate(opts):
-            if "ignor" in o or "exclud" in o or "skip" in o: return i
-
-    # Complex types
-    if "struct" in q and "array" in q:
-        for i, o in enumerate(opts):
-            if "complex" in o: return i
-
-    # Default: longest answer
-    return max(range(len(opts)), key=lambda i: len(opts[i]))
+# NOTE: This runner answers every question type via the Claude CLI
+# (see solve_mc_with_claude / solve_sql_with_claude above). The old offline
+# keyword heuristic that used to live here was unused and has been removed;
+# the offline fallback now lives in quiz_heuristics.get_answer.
 
 
 async def solve_quiz(page, slug: str, title: str) -> dict:

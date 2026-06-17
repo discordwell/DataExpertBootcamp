@@ -1,26 +1,7 @@
 """DataExpert Bootcamp Scraper - Extract challenge content with authenticated session."""
-import browser_cookie3
-import requests
-import json
 import re
-from pathlib import Path
 
-BASE_URL = "https://www.dataexpert.io"
-DATA_DIR = Path(__file__).parent / "data"
-DATA_DIR.mkdir(exist_ok=True)
-
-
-def get_session():
-    """Create a requests session with Chrome cookies."""
-    session = requests.Session()
-    cj = browser_cookie3.chrome(domain_name='dataexpert.io')
-    session.cookies = cj
-    session.headers.update({
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
-    })
-    return session
+from common import BASE_URL, DATA_DIR, get_session
 
 
 def test_auth():

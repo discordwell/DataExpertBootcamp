@@ -2,29 +2,9 @@
 import asyncio
 import json
 import re
-from pathlib import Path
 from playwright.async_api import async_playwright
-import browser_cookie3
 
-BASE_URL = "https://www.dataexpert.io"
-DATA_DIR = Path(__file__).parent / "data"
-DATA_DIR.mkdir(exist_ok=True)
-
-
-def get_cookies_for_playwright():
-    cj = browser_cookie3.chrome(domain_name='dataexpert.io')
-    cookies = []
-    for c in cj:
-        cookie = {
-            'name': c.name,
-            'value': c.value,
-            'domain': c.domain if c.domain else '.dataexpert.io',
-            'path': c.path if c.path else '/',
-        }
-        if c.expires:
-            cookie['expires'] = c.expires
-        cookies.append(cookie)
-    return cookies
+from common import BASE_URL, DATA_DIR, get_cookies_for_playwright
 
 
 async def scrape_quiz(slug: str):

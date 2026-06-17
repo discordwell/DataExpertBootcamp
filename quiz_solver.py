@@ -8,69 +8,14 @@ from pathlib import Path
 from datetime import datetime
 from playwright.async_api import async_playwright
 
+from quiz_heuristics import get_answer
+
 BASE_URL = "https://www.dataexpert.io"
 DATA_DIR = Path(__file__).parent / "data"
 DATA_DIR.mkdir(exist_ok=True)
 
 # Remote debugging port
 DEBUG_PORT = 9222
-
-
-def get_answer(question: str, options: list) -> int:
-    """Determine the correct answer based on question text and options."""
-    q = question.lower()
-    opts = [o.lower() for o in options]
-
-    # Data Modeling - Complex types
-    if "struct" in q and "array" in q:
-        for i, o in enumerate(opts):
-            if "complex" in o:
-                return i
-
-    # Cumulative data
-    if "cumulative" in q:
-        for i, o in enumerate(opts):
-            if "aggregate" in o or "accumulate" in o or "running" in o or "historical" in o:
-                return i
-
-    # SCD
-    if "slowly changing" in q or "scd" in q:
-        for i, o in enumerate(opts):
-            if "type 2" in o or "history" in o or "track" in o:
-                return i
-
-    # Fact table
-    if "fact table" in q or "fact model" in q:
-        for i, o in enumerate(opts):
-            if "measure" in o or "metric" in o or "event" in o or "transaction" in o:
-                return i
-
-    # Dimension
-    if "dimension" in q:
-        for i, o in enumerate(opts):
-            if "attribute" in o or "descriptive" in o or "context" in o:
-                return i
-
-    # Star schema
-    if "star schema" in q:
-        for i, o in enumerate(opts):
-            if "denormalized" in o or ("fact" in o and "dimension" in o):
-                return i
-
-    # Idempotent
-    if "idempotent" in q:
-        for i, o in enumerate(opts):
-            if "same result" in o or "multiple times" in o or "repeatable" in o:
-                return i
-
-    # Grain
-    if "grain" in q:
-        for i, o in enumerate(opts):
-            if "level of detail" in o or "granularity" in o or "atomic" in o:
-                return i
-
-    # Default: longest answer (often most complete)
-    return max(range(len(opts)), key=lambda i: len(opts[i]))
 
 
 async def solve_quiz(slug: str, module_name: str = ""):
