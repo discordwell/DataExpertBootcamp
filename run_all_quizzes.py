@@ -7,75 +7,7 @@ from playwright.async_api import async_playwright
 
 from common import CDP_URL, DATA_DIR, lesson_url
 from quiz_heuristics import get_answer
-
-CURRICULUM = {
-    "Week 1: Data Modeling": [
-        ("cumulative-data-quiz", "Cumulative Data"),
-        ("scd-quiz", "Slowly Changing Dimensions"),
-        ("fact-modeling-quiz", "Fact Modeling"),
-        ("core-data-modeling-quiz", "Core Data Modeling Elements"),
-        ("data-modeling-quiz", "Data Modeling"),
-    ],
-    "Week 2: SQL": [
-        ("sql-growth-accounting-quiz", "Growth Accounting"),
-        ("sql-aggregation-tuesdayquiz", "Aggregation"),
-        ("window-functions-wednesday-quiz", "Window Functions"),
-        ("thursday-quiz-a8b81", "SQL Thursday"),
-        ("fridayquiz-41956", "SQL Friday"),
-        ("saturdayquiz-289d8", "SQL Saturday"),
-        ("sundayquiz-4bfbb", "SQL Sunday"),
-    ],
-    "Week 3: Python & Data Structures": [
-        ("mondaybigonotation-24a31", "Big O Notation"),
-        ("tuesdayquiz-2a59e", "Python Tuesday"),
-        ("wednesdayquiz-795e0", "Python Wednesday"),
-        ("thursdayquiz-4d179", "Python Thursday"),
-        ("fridayquiz-8d36d", "Python Friday"),
-        ("saturdayquiz-628a3", "Python Saturday"),
-        ("sundayquiz-ff389", "Python Sunday"),
-    ],
-    "Week 4: Data Pipelines": [
-        ("mondaydatapipelinesquiz-8f0e2", "Data Pipelines Intro"),
-        ("tuesdayquiz-ba9b6", "Pipelines Tuesday"),
-        ("wednesdayquiz-0d421", "Pipelines Wednesday"),
-        ("thursdayquiz-5bc94", "Pipelines Thursday"),
-        ("fridayquiz-efa43", "Pipelines Friday"),
-        ("saturdayquiz-d2fd4", "Pipelines Saturday"),
-        ("sundayquiz-c4dda", "Pipelines Sunday"),
-    ],
-    "Week 5: Machine Learning & AI": [
-        ("mondaymlandaiquiz-e4a32", "ML & AI Intro"),
-        ("tuesdayquiz-4fea1", "ML Tuesday"),
-        ("wednesdayquiz-33b10", "ML Wednesday"),
-        ("thursdayquiz-a6cdb", "ML Thursday"),
-        ("fridayquiz-7e3bd", "ML Friday"),
-        ("saturdayquiz-a156e", "ML Saturday"),
-        ("sundayquiz-a92f1", "ML Sunday"),
-    ],
-    "Week 6: Distributed Computing": [
-        ("mondayquiz-54719", "Distributed Monday"),
-        ("tuesdayquiz-1895d", "Distributed Tuesday"),
-        ("wednesdayquiz-2119f", "Distributed Wednesday"),
-        ("thursdayquiz-4b3ee", "Distributed Thursday"),
-        ("fridayquiz-1e809", "Distributed Friday"),
-        ("saturdayquiz-12e15", "Distributed Saturday"),
-        ("sundayquiz-29862", "Distributed Sunday"),
-    ],
-    "Week 7: Data Engineer Interview": [
-        ("mondaydataengineerinterviewquiz-39afc", "DE Interview Monday"),
-        ("tuesdayquiz-a58fc", "DE Interview Tuesday"),
-        ("wednesdayquiz-8c099", "DE Interview Wednesday"),
-        ("thursdayquiz-c78e7", "DE Interview Thursday"),
-        ("fridayquiz-5af2b", "DE Interview Friday"),
-        ("saturdayquiz-a77da", "DE Interview Saturday"),
-        ("sundayquiz-1b699", "DE Interview Sunday"),
-    ],
-    "Week 8: AI Engineer Interview": [
-        ("mondayquiz-e949d", "AI Engineer Monday"),
-        ("tuesdayquiz-b98b1", "AI Engineer Tuesday"),
-        ("wednesdayquiz-95a12", "AI Engineer Wednesday"),
-    ],
-}
+from quizzes import CURRICULUM
 
 
 async def solve_single_quiz(page, slug: str, title: str) -> dict:

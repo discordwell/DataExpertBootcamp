@@ -2,6 +2,29 @@
 
 ## Session Summaries (most recent first; keep 20)
 
+### 2026-06-17T13:17Z — Maintenance pass: centralize curriculum, extract+test response parsers
+Continued the "pure logic lives in tested modules / single source of truth" trajectory.
+Suite grew 92 → 134 green, still browser-free.
+
+- **`quiz_parsing.py` (new):** extracted the three pure Claude-response parsers out of
+  `run_quizzes_v2.py` — `parse_mc_answer` (MC letter extraction + multi-select dedup),
+  `extract_sql` (markdown-fence stripping + single-line normalize + validate), and
+  `clean_text_response` (preamble strip). Verified **byte-for-byte identical** to the
+  original inline logic over 100k randomized inputs before swapping the runner to call
+  them. `parse_mc_answer` is also now safe for `num_options == 0` (old code raised on the
+  empty regex char class). New `tests/test_quiz_parsing.py` (29 cases).
+- **`quizzes.py` (new):** centralized the quiz curriculum (`CURRICULUM` by week +
+  derived flat `ALL_QUIZZES`). It was duplicated in both runners and had **drifted**:
+  `run_quizzes_v2` was missing the Week 3 "Big O Notation" quiz (49 vs the 50 in
+  `run_all_quizzes`), and v2's `status_check` re-derived weeks with brittle magic-number
+  slices (`ALL_QUIZZES[0:5]`, …). Both runners now import the shared list; v2's
+  `status_check` iterates `CURRICULUM` directly. Confirmed the shared `CURRICULUM` is
+  identical to run_all's old copy (that runner unchanged) and v2 gains exactly the one
+  missing slug. New `tests/test_quizzes.py` (7 invariants).
+- v2 log titles are now the descriptive ones (e.g. "Python Tuesday" vs "Tuesday Quiz") —
+  cosmetic; titles are display-only, nothing keys off them. Net −204/+19 lines in the
+  two runners (logic moved into the shared modules).
+
 ### 2026-06-17T09:02Z — Maintenance pass: finish centralization, kill dead code, fix two bugs
 Continued the prior refactor. First committed the staged WIP (shared modules + tests +
 docs) as `cbf922d`, then improved on it.
@@ -54,8 +77,10 @@ flows (which can't be exercised offline).
   `run_all_quizzes.py` and the older `quiz_solver.py`. When the CLI can't produce usable
   SQL, v2 falls back to the offline template generator `quiz_sql.generate_sql`.
 - **Pure logic lives in tested modules:** `common.py` (config + auth helpers, incl.
-  `CDP_URL`/`lesson_url`), `quiz_heuristics.py`, and `quiz_sql.py` are all browser-free
-  and unit-tested. Every script imports config from `common`.
+  `CDP_URL`/`lesson_url`), `quizzes.py` (the canonical curriculum — `CURRICULUM` +
+  `ALL_QUIZZES`), `quiz_heuristics.py`, `quiz_sql.py`, and `quiz_parsing.py` (Claude
+  MC/SQL/text response parsers) are all browser-free and unit-tested. Every script
+  imports config from `common` and the quiz list from `quizzes`.
 - **Auth model:** scripts reuse the user's logged-in Chrome session — cookies via
   `browser_cookie3`, and/or CDP attach to Chrome started with
   `--remote-debugging-port=9222`. No credentials are stored.

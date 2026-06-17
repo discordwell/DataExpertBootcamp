@@ -7,7 +7,9 @@ from datetime import datetime
 from playwright.async_api import async_playwright
 
 from common import CDP_URL, DATA_DIR, lesson_url
+from quiz_parsing import clean_text_response, extract_sql, parse_mc_answer
 from quiz_sql import generate_sql
+from quizzes import ALL_QUIZZES, CURRICULUM
 
 RESEARCH_FILE = DATA_DIR / "quiz_research.md"
 
@@ -92,39 +94,9 @@ Instructions:
             timeout=120  # Increased timeout for research context + thinking
         )
         response = result.stdout.strip()
-        valid_chars = 'ABCD'[:num_options]
-
-        # Look for answer in <answer> tags first
-        answer_match = re.search(r'<answer>\s*([A-Za-z,\s]+)\s*</answer>', response)
-        if answer_match:
-            answer_text = answer_match.group(1).upper()
-            # Extract all letters from the answer
-            letters = [c for c in answer_text if c in valid_chars]
-            if letters:
-                indices = [ord(c) - ord('A') for c in letters if ord(c) - ord('A') < len(options)]
-                if indices:
-                    return indices if multi_select else [indices[0]]
-
-        # Fallback: find letters in response
-        response_upper = response.upper()
-        letters_found = re.findall(rf'\b([{valid_chars}])\b', response_upper)
-        if letters_found:
-            if multi_select:
-                # For multi-select, return unique letters found (dedupe while preserving order)
-                seen = set()
-                unique_letters = [x for x in letters_found if not (x in seen or seen.add(x))]
-                indices = [ord(c) - ord('A') for c in unique_letters if ord(c) - ord('A') < len(options)]
-                if indices:
-                    return indices
-            else:
-                # For single-select, take the last letter mentioned
-                letter = letters_found[-1]
-                idx = ord(letter) - ord('A')
-                if idx < len(options):
-                    return [idx]
-
-        # Fallback to first option
-        return [0]
+        # Parsing the model's letters out of the response is pure logic, unit
+        # tested in tests/test_quiz_parsing.py.
+        return parse_mc_answer(response, num_options, multi_select)
     except Exception as e:
         print(f"         Claude MC exception: {e}", flush=True)
         return [0]
@@ -175,7 +147,7 @@ def solve_text_response_with_claude(question: str, feedback: str = None) -> str:
             response = result.stderr.strip()
 
         # Clean up response - remove any leading "Here is" type phrasing
-        response = re.sub(r'^(Here is |My answer:|Response:)\s*', '', response, flags=re.IGNORECASE)
+        response = clean_text_response(response)
 
         return response if response else "Unable to generate response"
     except subprocess.TimeoutExpired:
@@ -279,33 +251,13 @@ def solve_sql_with_claude(question: str, table: str, expected_cols: list, feedba
         )
 
         if result.returncode == 0:
-            sql = result.stdout.strip()
-
-            # Extract SQL from markdown code blocks if present
-            code_block_match = re.search(r'```sql\s*(.*?)\s*```', sql, re.DOTALL | re.IGNORECASE)
-            if code_block_match:
-                sql = code_block_match.group(1)
-            else:
-                # Try to extract SQL that starts with SELECT, WITH, INSERT, UPDATE, DELETE
-                sql_match = re.search(r'((?:SELECT|WITH|INSERT|UPDATE|DELETE)\b.*)', sql, re.DOTALL | re.IGNORECASE)
-                if sql_match:
-                    sql = sql_match.group(1)
-
-            # Remove any remaining markdown code block markers
-            sql = re.sub(r'^```sql\s*', '', sql, flags=re.IGNORECASE)
-            sql = re.sub(r'^```\s*', '', sql)
-            sql = re.sub(r'\s*```$', '', sql)
-            sql = sql.strip()
-
-            # Flatten to single line
-            sql = ' '.join(sql.split())
-
-            # Validate it looks like SQL
-            if sql and sql.upper().startswith(('SELECT', 'WITH', 'INSERT', 'UPDATE', 'DELETE')):
+            # Extracting/normalizing the SQL out of the model's response is pure
+            # logic, unit tested in tests/test_quiz_parsing.py.
+            sql = extract_sql(result.stdout)
+            if sql:
                 return sql
-            else:
-                print(f"         Invalid SQL response: {sql[:50]}...", flush=True)
-                return None
+            print(f"         Invalid SQL response: {result.stdout.strip()[:50]}...", flush=True)
+            return None
         else:
             print(f"         Claude error: {result.stderr[:100]}", flush=True)
             return None
@@ -317,68 +269,9 @@ def solve_sql_with_claude(question: str, table: str, expected_cols: list, feedba
         return None
 
 
-# All 49 quizzes organized by week
-ALL_QUIZZES = [
-    # Week 1: Data Modeling
-    ("cumulative-data-quiz", "Wednesday Cumulative Data Quiz"),
-    ("scd-quiz", "Thursday SCD Quiz"),
-    ("fact-modeling-quiz", "Fact Modeling Friday Quiz"),
-    ("core-data-modeling-quiz", "Core Data Modeling Saturday Quiz"),
-    ("data-modeling-quiz", "Data Modeling Sunday Quiz"),
-    # Week 2: SQL
-    ("sql-growth-accounting-quiz", "Monday SQL Quiz"),
-    ("sql-aggregation-tuesdayquiz", "Tuesday SQL Quiz"),
-    ("window-functions-wednesday-quiz", "Wednesday SQL Quiz"),
-    ("thursday-quiz-a8b81", "Thursday SQL Quiz"),
-    ("fridayquiz-41956", "Friday SQL Quiz"),
-    ("saturdayquiz-289d8", "Saturday SQL Quiz"),
-    ("sundayquiz-4bfbb", "Sunday SQL Quiz"),
-    # Week 3: Python and Data Structures
-    ("tuesdayquiz-2a59e", "Tuesday Quiz"),
-    ("wednesdayquiz-795e0", "Wednesday Quiz"),
-    ("thursdayquiz-4d179", "Thursday Quiz"),
-    ("fridayquiz-8d36d", "Friday Quiz"),
-    ("saturdayquiz-628a3", "Saturday Quiz"),
-    ("sundayquiz-ff389", "Sunday Quiz"),
-    # Week 4: Data Pipelines
-    ("mondaydatapipelinesquiz-8f0e2", "Monday Data Pipelines Quiz"),
-    ("tuesdayquiz-ba9b6", "Tuesday Quiz"),
-    ("wednesdayquiz-0d421", "Wednesday Quiz"),
-    ("thursdayquiz-5bc94", "Thursday Quiz"),
-    ("fridayquiz-efa43", "Friday Quiz"),
-    ("saturdayquiz-d2fd4", "Saturday Quiz"),
-    ("sundayquiz-c4dda", "Sunday Quiz"),
-    # Week 5: ML and AI
-    ("mondaymlandaiquiz-e4a32", "Monday ML Quiz"),
-    ("tuesdayquiz-4fea1", "Tuesday Quiz"),
-    ("wednesdayquiz-33b10", "Wednesday Quiz"),
-    ("thursdayquiz-a6cdb", "Thursday Quiz"),
-    ("fridayquiz-7e3bd", "Friday Quiz"),
-    ("saturdayquiz-a156e", "Saturday Quiz"),
-    ("sundayquiz-a92f1", "Sunday Quiz"),
-    # Week 6: Distributed Computing
-    ("mondayquiz-54719", "Monday Quiz"),
-    ("tuesdayquiz-1895d", "Tuesday Quiz"),
-    ("wednesdayquiz-2119f", "Wednesday Quiz"),
-    ("thursdayquiz-4b3ee", "Thursday Quiz"),
-    ("fridayquiz-1e809", "Friday Quiz"),
-    ("saturdayquiz-12e15", "Saturday Quiz"),
-    ("sundayquiz-29862", "Sunday Quiz"),
-    # Week 7: Data Engineer Interview
-    ("mondaydataengineerinterviewquiz-39afc", "Monday DE Interview Quiz"),
-    ("tuesdayquiz-a58fc", "Tuesday Quiz"),
-    ("wednesdayquiz-8c099", "Wednesday Quiz"),
-    ("thursdayquiz-c78e7", "Thursday Quiz"),
-    ("fridayquiz-5af2b", "Friday Quiz"),
-    ("saturdayquiz-a77da", "Saturday Quiz"),
-    ("sundayquiz-1b699", "Sunday Quiz"),
-    # Week 8: AI Engineer Interview
-    ("mondayquiz-e949d", "Monday Quiz"),
-    ("tuesdayquiz-b98b1", "Tuesday Quiz"),
-    ("wednesdayquiz-95a12", "Wednesday Quiz"),
-]
-
-
+# The quiz curriculum (ALL_QUIZZES flat list + CURRICULUM week grouping) lives in
+# quizzes.py so this runner and run_all_quizzes.py share one source of truth.
+#
 # NOTE: This runner answers every question type via the Claude CLI
 # (see solve_mc_with_claude / solve_sql_with_claude above). The offline
 # fallbacks live in their own pure, tested modules: the keyword heuristic in
@@ -1473,20 +1366,10 @@ async def status_check():
         context = browser.contexts[0]
         page = await context.new_page()
 
-        # Group quizzes by week
-        weeks = {
-            "Week 1: Data Modeling": ALL_QUIZZES[0:5],
-            "Week 2: SQL": ALL_QUIZZES[5:12],
-            "Week 3: Python": ALL_QUIZZES[12:18],
-            "Week 4: Data Pipelines": ALL_QUIZZES[18:25],
-            "Week 5: ML and AI": ALL_QUIZZES[25:32],
-            "Week 6: Distributed Computing": ALL_QUIZZES[32:39],
-            "Week 7: DE Interview": ALL_QUIZZES[39:46],
-            "Week 8: AI Engineer": ALL_QUIZZES[46:49],
-        }
-
+        # Group quizzes by week — straight from the shared curriculum, so this
+        # stays correct even if the quiz list changes (no magic-number slices).
         all_results = {}
-        for week_name, quizzes in weeks.items():
+        for week_name, quizzes in CURRICULUM.items():
             print(f"\n{week_name}", flush=True)
             print("-"*40, flush=True)
             week_results = []

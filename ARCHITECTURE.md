@@ -53,6 +53,18 @@ scrapers, the CDP URL and lesson-URL pattern were re-typed in every runner, and
 the constants were redefined in every file. All scripts — including the
 `inspect_*`/`debug_quizzes` helpers — now import from here.
 
+### `quizzes.py`
+The canonical quiz curriculum — the single source of truth for the ~50
+`(slug, title)` pairs. It exposes `CURRICULUM` (an ordered week → quizzes mapping)
+and `ALL_QUIZZES` (the flat list, derived from `CURRICULUM`).
+
+Both runners used to hardcode their own copy of this list and the copies drifted:
+`run_quizzes_v2.py` was missing the Week 3 "Big O Notation" quiz (49 vs. 50), and
+its `status_check` re-derived the week grouping with magic-number slices
+(`ALL_QUIZZES[0:5]`, `[5:12]`, …) that break silently if the list is reordered.
+Centralizing here keeps the runners in sync and lets the week grouping come from
+real structure. Being pure data, it is verified by `tests/test_quizzes.py`.
+
 ### `quiz_heuristics.py`
 A pure, network-free function `get_answer(question, options) -> int` that picks an
 option index using a long list of `topic → keyword` rules (one block per bootcamp
@@ -73,6 +85,23 @@ plain name strings.
 `run_quizzes_v2.py` uses it only as the **offline fallback** when the Claude CLI fails
 to return usable SQL. Extracting it from the runner (mirroring `quiz_heuristics`) keeps
 it unit-testable in `tests/test_quiz_sql.py` without a browser or the CLI.
+
+### `quiz_parsing.py`
+Pure parsers for the Claude CLI's raw responses, used by `run_quizzes_v2.py`:
+
+- `parse_mc_answer(response, num_options, multi_select)` — pulls the chosen option
+  index/indices out of the model's text (an `<answer>…</answer>` block first, then
+  standalone capital letters), de-duplicating multi-select picks.
+- `extract_sql(raw)` — strips markdown ```` ```sql ```` fences, grabs from the first
+  SQL keyword, collapses to a single line, and validates it as SQL (or `None`).
+- `clean_text_response(response)` — strips a leading "Here is" / "My answer:" /
+  "Response:" preamble.
+
+This logic used to live inside the subprocess-calling solver functions where it
+could not be tested. Pulling it into a pure module (like `quiz_heuristics` and
+`quiz_sql`) makes the fiddly LLM-output edge cases unit-testable in
+`tests/test_quiz_parsing.py`. The extraction was verified byte-for-byte against the
+original inline logic over 100k randomized inputs.
 
 ## The scripts
 
@@ -122,6 +151,11 @@ logic and stay browser-free (no Playwright import required to run them):
 - `tests/test_quiz_heuristics.py` — locks in the heuristic's selections and edge cases.
 - `tests/test_quiz_sql.py` — exercises each SQL template branch and guards the
   dict-shaped-columns regression (`generate_sql` used to crash joining column dicts).
+- `tests/test_quiz_parsing.py` — pins the Claude-response parsers: MC letter
+  extraction, multi-select de-duplication, markdown SQL-fence stripping, and
+  preamble cleanup.
+- `tests/test_quizzes.py` — guards the curriculum invariants: eight weeks, fifty
+  quizzes, unique slugs, and a flat `ALL_QUIZZES` that matches the week grouping.
 - `tests/test_common.py` — verifies cookie conversion, session setup, and the
   `CDP_URL`/`lesson_url` helpers by monkeypatching `browser_cookie3` (no real browser
   or cookies needed).

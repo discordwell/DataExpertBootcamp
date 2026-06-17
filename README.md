@@ -73,16 +73,19 @@ git-ignored.
 
 ## Testing
 
-The pure logic (the answer heuristic, the SQL template generator, and the cookie/session
-helpers) is covered by a browser-free pytest suite:
+The pure logic — the answer heuristic, the SQL template generator, the Claude-response
+parsers, the cookie/session helpers, and the quiz curriculum — is covered by a
+browser-free pytest suite:
 
 ```bash
 python -m pytest
 ```
 
 The tests monkeypatch `browser_cookie3` so they run offline with no real cookies, lock in
-the heuristic's option-selection behavior, and exercise every `quiz_sql` template branch
-(including the dict-shaped-columns regression).
+the heuristic's option-selection behavior, exercise every `quiz_sql` template branch
+(including the dict-shaped-columns regression), pin the `quiz_parsing` edge cases
+(multi-select de-duplication, markdown SQL fences, preamble stripping), and guard the
+curriculum invariants (unique slugs, the flat list matching the week grouping).
 
 ## Responsible use
 
@@ -94,8 +97,10 @@ or services you aren't authorized to use, and respect DataExpert.io's terms of s
 
 ```
 common.py            Shared config (BASE_URL, DATA_DIR, CDP_URL, lesson_url) + auth helpers
+quizzes.py           Canonical quiz curriculum: CURRICULUM (by week) + ALL_QUIZZES (flat)
 quiz_heuristics.py   Offline keyword heuristic for multiple-choice answers (pure, tested)
 quiz_sql.py          Offline template-based SQL generator / fallback (pure, tested)
+quiz_parsing.py      Pure parsers for the Claude CLI's MC/SQL/text responses (tested)
 run_quizzes_v2.py    Primary runner — answers via the Claude CLI
 run_all_quizzes.py   Full-curriculum runner — answers via the offline heuristic
 quiz_solver.py       Early single-quiz solver (heuristic)
