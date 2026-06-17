@@ -2,6 +2,8 @@
 import asyncio
 from playwright.async_api import async_playwright
 
+from common import CDP_URL, lesson_url
+
 QUIZZES = [
     "window-functions-wednesday-quiz",
     "fridayquiz-41956",
@@ -12,12 +14,12 @@ QUIZZES = [
 async def debug():
     async with async_playwright() as p:
         print("Connecting to Chrome...")
-        browser = await p.chromium.connect_over_cdp("http://localhost:9222")
+        browser = await p.chromium.connect_over_cdp(CDP_URL)
         context = browser.contexts[0]
         page = await context.new_page()
 
         for slug in QUIZZES:
-            url = f"https://www.dataexpert.io/lesson/{slug}"
+            url = lesson_url(slug)
             print(f"\n{slug}:")
             await page.goto(url, wait_until='networkidle', timeout=60000)
             await asyncio.sleep(2)

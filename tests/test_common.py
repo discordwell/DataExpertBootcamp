@@ -72,3 +72,14 @@ def test_get_session_sets_cookies_and_headers(monkeypatch):
 def test_data_dir_and_base_url_are_shared():
     assert common.BASE_URL == "https://www.dataexpert.io"
     assert common.DATA_DIR.name == "data"
+
+
+def test_cdp_url_is_built_from_port():
+    assert common.CDP_PORT == 9222
+    assert common.CDP_URL == f"http://localhost:{common.CDP_PORT}"
+
+
+def test_lesson_url_builds_from_base_url():
+    assert common.lesson_url("scd-quiz") == f"{common.BASE_URL}/lesson/scd-quiz"
+    # A different slug only changes the trailing path segment.
+    assert common.lesson_url("fact-modeling-quiz").endswith("/lesson/fact-modeling-quiz")

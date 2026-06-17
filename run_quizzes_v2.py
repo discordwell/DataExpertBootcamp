@@ -3,13 +3,12 @@ import asyncio
 import json
 import re
 import subprocess
-from pathlib import Path
 from datetime import datetime
 from playwright.async_api import async_playwright
 
-BASE_URL = "https://www.dataexpert.io"
-DATA_DIR = Path(__file__).parent / "data"
-DATA_DIR.mkdir(exist_ok=True)
+from common import CDP_URL, DATA_DIR, lesson_url
+from quiz_sql import generate_sql
+
 RESEARCH_FILE = DATA_DIR / "quiz_research.md"
 
 
@@ -379,209 +378,12 @@ ALL_QUIZZES = [
     ("wednesdayquiz-95a12", "Wednesday Quiz"),
 ]
 
-# Weeks 5-8 (remaining after browser disconnection)
-REMAINING_WEEKS = [
-    # Week 5: ML and AI
-    ("mondaymlandaiquiz-e4a32", "Monday ML Quiz"),
-    ("tuesdayquiz-4fea1", "Tuesday Quiz"),
-    ("wednesdayquiz-33b10", "Wednesday Quiz"),
-    ("thursdayquiz-a6cdb", "Thursday Quiz"),
-    ("fridayquiz-7e3bd", "Friday Quiz"),
-    ("saturdayquiz-a156e", "Saturday Quiz"),
-    ("sundayquiz-a92f1", "Sunday Quiz"),
-    # Week 6: Distributed Computing
-    ("mondayquiz-54719", "Monday Quiz"),
-    ("tuesdayquiz-1895d", "Tuesday Quiz"),
-    ("wednesdayquiz-2119f", "Wednesday Quiz"),
-    ("thursdayquiz-4b3ee", "Thursday Quiz"),
-    ("fridayquiz-1e809", "Friday Quiz"),
-    ("saturdayquiz-12e15", "Saturday Quiz"),
-    ("sundayquiz-29862", "Sunday Quiz"),
-    # Week 7: Data Engineer Interview
-    ("mondaydataengineerinterviewquiz-39afc", "Monday DE Interview Quiz"),
-    ("tuesdayquiz-a58fc", "Tuesday Quiz"),
-    ("wednesdayquiz-8c099", "Wednesday Quiz"),
-    ("thursdayquiz-c78e7", "Thursday Quiz"),
-    ("fridayquiz-5af2b", "Friday Quiz"),
-    ("saturdayquiz-a77da", "Saturday Quiz"),
-    ("sundayquiz-1b699", "Sunday Quiz"),
-    # Week 8: AI Engineer Interview (may not be available yet)
-    ("mondayquiz-e949d", "Monday Quiz"),
-    ("tuesdayquiz-b98b1", "Tuesday Quiz"),
-    ("wednesdayquiz-95a12", "Wednesday Quiz"),
-]
-
-# Quizzes that need 100% - targeted retry list
-NEEDS_100_PERCENT = [
-    # Week 2
-    ("thursday-quiz-a8b81", "Thursday SQL Quiz"),
-    # Week 3: Python and Data Structures
-    ("tuesdayquiz-2a59e", "Tuesday Quiz"),
-    ("thursdayquiz-4d179", "Thursday Quiz"),
-    ("fridayquiz-8d36d", "Friday Quiz"),
-    ("saturdayquiz-628a3", "Saturday Quiz"),
-    ("sundayquiz-ff389", "Sunday Quiz"),
-    # Week 4: Data Pipelines
-    ("mondaydatapipelinesquiz-8f0e2", "Monday Data Pipelines Quiz"),
-    ("wednesdayquiz-0d421", "Wednesday Quiz"),
-    ("saturdayquiz-d2fd4", "Saturday Quiz"),
-    # Week 5: ML
-    ("wednesdayquiz-33b10", "Wednesday Quiz"),
-    # Week 6: Distributed Computing
-    ("saturdayquiz-12e15", "Saturday Quiz"),
-]
-
-# Code questions that need full question text - test improved extraction
-CODE_QUESTIONS_QUIZZES = [
-    ("thursdayquiz-4d179", "Thursday Quiz"),  # Week 3 - Python code output
-]
-
-# Remaining quizzes needing 100%
-RETRY_QUIZZES = [
-    # Week 4: Data Pipelines - backpressure question needs A+D
-    ("saturdayquiz-d2fd4", "Saturday Quiz"),  # 4/5 (80%)
-]
-
-
-def generate_sql(question: str, tables: list, expected_cols: list) -> str:
-    """Generate SQL based on question requirements and expected columns."""
-    q = question.lower()
-    table = tables[0] if tables else "bootcamp.sales"
-
-    # Use expected columns to build proper SELECT
-    base_cols = [c for c in expected_cols if c not in ['running_total', 'row_num', 'rn', 'prev_amount', 'next_amount', 'rank']]
-
-    # Running total / cumulative sum
-    if "running total" in q or "cumulative" in q:
-        partition_col = None
-        order_col = None
-        sum_col = "amount"
-
-        if "salesperson" in q:
-            partition_col = "salesperson"
-        if "sale_date" in q or "ordered by" in q:
-            order_col = "sale_date"
-
-        # Find the running_total column name from expected
-        running_col = "running_total"
-        for c in expected_cols:
-            if "running" in c or "total" in c:
-                running_col = c
-                break
-
-        select_cols = ", ".join(base_cols) if base_cols else "*"
-
-        if partition_col and order_col:
-            return f"""SELECT {select_cols}, SUM({sum_col}) OVER (PARTITION BY {partition_col} ORDER BY {order_col}) AS {running_col}
-FROM {table}"""
-        elif order_col:
-            return f"""SELECT {select_cols}, SUM({sum_col}) OVER (ORDER BY {order_col}) AS {running_col}
-FROM {table}"""
-
-    # Top score / rank with ties - need to filter to rank=1
-    if "top score" in q or ("rank" in q and "ties" in q):
-        # Find partition and order columns from expected
-        partition_col = next((c for c in expected_cols if "date" in c or "game" in c), "game_date")
-        score_col = next((c for c in expected_cols if "score" in c and "rank" not in c), "score")
-        rank_col = next((c for c in expected_cols if "rank" in c), "score_rank")
-
-        # Build the expected columns
-        select_cols = ", ".join(expected_cols) if expected_cols else "*"
-
-        # Use subquery with RANK, then filter to rank=1 for "top" scores
-        return f"""SELECT {select_cols} FROM (SELECT *, RANK() OVER (PARTITION BY {partition_col} ORDER BY {score_col} DESC) AS {rank_col}, COUNT(*) OVER (PARTITION BY {partition_col}) AS players_that_day FROM {table}) t WHERE {rank_col} = 1"""
-
-    # Row number / ranking (no ties)
-    if "row_number" in q or ("rank" in q and "ties" not in q):
-        partition = None
-        order = "id"
-        if "department" in q:
-            partition = "department"
-        if "salary" in q:
-            order = "salary DESC"
-
-        select_cols = ", ".join(base_cols) if base_cols else "*"
-        rn_col = next((c for c in expected_cols if "row" in c or "rn" in c or "rank" in c), "row_num")
-
-        if partition:
-            return f"""SELECT {select_cols}, ROW_NUMBER() OVER (PARTITION BY {partition} ORDER BY {order}) AS {rn_col} FROM {table}"""
-        return f"""SELECT {select_cols}, ROW_NUMBER() OVER (ORDER BY {order}) AS {rn_col} FROM {table}"""
-
-    # Session calculation from event logs
-    if "session" in q and ("consecutive" in q or "gap" in q or "event" in q):
-        # Complex sessionization query using LAG and gap detection
-        return f"""WITH event_gaps AS ( SELECT *, LAG(event_time) OVER (PARTITION BY user_id ORDER BY event_time) AS prev_time, CASE WHEN event_time - LAG(event_time) OVER (PARTITION BY user_id ORDER BY event_time) > INTERVAL '30 minutes' OR LAG(event_time) OVER (PARTITION BY user_id ORDER BY event_time) IS NULL THEN 1 ELSE 0 END AS new_session FROM {table} ), sessions AS ( SELECT *, SUM(new_session) OVER (PARTITION BY user_id ORDER BY event_time) AS session_num FROM event_gaps ) SELECT user_id, session_num, MIN(event_time) AS session_start, MAX(event_time) AS session_end, EXTRACT(EPOCH FROM (MAX(event_time) - MIN(event_time)))/60 AS duration_minutes, COUNT(*) AS event_count FROM sessions GROUP BY user_id, session_num"""
-
-    # LAG / previous
-    if "previous" in q or "lag" in q:
-        select_cols = ", ".join(base_cols) if base_cols else "*"
-        return f"""SELECT {select_cols}, LAG(amount, 1) OVER (ORDER BY sale_date) AS prev_amount
-FROM {table}"""
-
-    # LEAD / next
-    if "next" in q or "lead" in q:
-        select_cols = ", ".join(base_cols) if base_cols else "*"
-        return f"""SELECT {select_cols}, LEAD(amount, 1) OVER (ORDER BY sale_date) AS next_amount
-FROM {table}"""
-
-    # Most recent price (Trino-compatible using ROW_NUMBER)
-    if "most recent" in q and "price" in q:
-        # Find the date/timestamp column for ordering
-        order_col = "effective_date"
-        if "updated_at" in q:
-            order_col = "updated_at"
-
-        select_cols = ", ".join(expected_cols) if expected_cols else "product_id, price, effective_date"
-        return f"""SELECT {select_cols}
-FROM (
-    SELECT *, ROW_NUMBER() OVER (PARTITION BY product_id ORDER BY {order_col} DESC) AS rn
-    FROM {table}
-) t
-WHERE rn = 1"""
-
-    # Customers with no orders
-    if ("have not" in q or "never" in q or "no order" in q) and "customer" in q:
-        # Use expected columns directly without table prefix
-        select_cols = ", ".join(expected_cols) if expected_cols else "customer_id, customer_name"
-        return f"""SELECT {select_cols}
-FROM {table} c
-WHERE NOT EXISTS (
-    SELECT 1 FROM bootcamp.orders o
-    WHERE o.customer_id = c.customer_id
-)"""
-
-    # Average with rounding
-    if "average" in q or "avg" in q:
-        if "round" in q:
-            return f"""SELECT ROUND(AVG(total)::numeric, 2) AS average
-FROM {table}"""
-        return f"""SELECT AVG(amount) AS average
-FROM {table}"""
-
-    # Count with GROUP BY
-    if "count" in q and "group" in q:
-        group_col = expected_cols[0] if expected_cols else "category"
-        return f"""SELECT {group_col}, COUNT(*) AS count
-FROM {table}
-GROUP BY {group_col}"""
-
-    # HAVING clause question
-    if "having" in q or "filter" in q and "group" in q:
-        return f"""SELECT category, SUM(amount) AS total
-FROM {table}
-GROUP BY category
-HAVING SUM(amount) > 1000"""
-
-    # Default: select expected columns
-    if expected_cols:
-        return f"SELECT {', '.join(expected_cols)}\nFROM {table}"
-    return f"SELECT *\nFROM {table}\nLIMIT 100"
-
 
 # NOTE: This runner answers every question type via the Claude CLI
-# (see solve_mc_with_claude / solve_sql_with_claude above). The old offline
-# keyword heuristic that used to live here was unused and has been removed;
-# the offline fallback now lives in quiz_heuristics.get_answer.
+# (see solve_mc_with_claude / solve_sql_with_claude above). The offline
+# fallbacks live in their own pure, tested modules: the keyword heuristic in
+# quiz_heuristics.get_answer and the template-based SQL generator in
+# quiz_sql.generate_sql (imported at the top).
 
 
 async def solve_quiz(page, slug: str, title: str) -> dict:
@@ -589,7 +391,7 @@ async def solve_quiz(page, slug: str, title: str) -> dict:
     result = {"slug": slug, "title": title, "questions": [], "completed": False, "score": 0}
 
     try:
-        url = f"{BASE_URL}/lesson/{slug}"
+        url = lesson_url(slug)
         print(f"\n  [{title}]", flush=True)
         await page.goto(url, wait_until='networkidle', timeout=60000)
 
@@ -1554,16 +1356,21 @@ async def solve_quiz(page, slug: str, title: str) -> dict:
 
 
 async def main():
-    """Run retry quizzes."""
+    """Solve every quiz via the Claude CLI, skipping ones already at 100%.
+
+    ``solve_quiz`` detects an already-perfect quiz and returns early, so this is
+    safe to re-run: completed quizzes are skipped and only unfinished ones are
+    attempted.
+    """
     results = {"timestamp": datetime.now().isoformat(), "quizzes": []}
 
     async with async_playwright() as p:
         print("Connecting to Chrome...", flush=True)
-        browser = await p.chromium.connect_over_cdp("http://localhost:9222")
+        browser = await p.chromium.connect_over_cdp(CDP_URL)
         context = browser.contexts[0]
         page = await context.new_page()
 
-        for slug, title in RETRY_QUIZZES:
+        for slug, title in ALL_QUIZZES:
             try:
                 result = await solve_quiz(page, slug, title)
                 results["quizzes"].append(result)
@@ -1572,7 +1379,7 @@ async def main():
                     # Browser/page closed - try to reconnect
                     print(f"    Connection lost, reconnecting...", flush=True)
                     try:
-                        browser = await p.chromium.connect_over_cdp("http://localhost:9222")
+                        browser = await p.chromium.connect_over_cdp(CDP_URL)
                         context = browser.contexts[0]
                         page = await context.new_page()
                         # Retry this quiz
@@ -1586,7 +1393,7 @@ async def main():
                     results["quizzes"].append({"slug": slug, "title": title, "error": str(e)})
 
             # Save progress
-            with open(DATA_DIR / "retry_progress.json", "w") as f:
+            with open(DATA_DIR / "v2_progress.json", "w") as f:
                 json.dump(results, f, indent=2)
 
         try:
@@ -1600,7 +1407,7 @@ async def main():
     total_c = sum(r.get("score", 0) for r in results["quizzes"])
     pct = (total_c / total_q * 100) if total_q > 0 else 0
     print(f"\n{'='*50}", flush=True)
-    print(f"RETRY COMPLETE: {passed}/{len(RETRY_QUIZZES)} passed", flush=True)
+    print(f"COMPLETE: {passed}/{len(ALL_QUIZZES)} passed", flush=True)
     print(f"Questions: {total_c}/{total_q} correct ({pct:.0f}%)", flush=True)
 
 
@@ -1609,7 +1416,7 @@ async def check_quiz_status(page, slug: str, title: str) -> dict:
     result = {"slug": slug, "title": title, "status": "unknown", "score": None}
 
     try:
-        url = f"{BASE_URL}/lesson/{slug}"
+        url = lesson_url(slug)
         await page.goto(url, wait_until='networkidle', timeout=30000)
 
         if "/sign-in" in page.url:
@@ -1662,7 +1469,7 @@ async def status_check():
 
     async with async_playwright() as p:
         print("Connecting to Chrome...", flush=True)
-        browser = await p.chromium.connect_over_cdp("http://localhost:9222")
+        browser = await p.chromium.connect_over_cdp(CDP_URL)
         context = browser.contexts[0]
         page = await context.new_page()
 

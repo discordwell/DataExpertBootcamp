@@ -1,19 +1,18 @@
 """Inspect quiz HTML structure to understand DOM."""
 import asyncio
-from pathlib import Path
 from playwright.async_api import async_playwright
 
-DATA_DIR = Path(__file__).parent / "data"
+from common import CDP_URL, DATA_DIR, lesson_url
 
 async def inspect():
     async with async_playwright() as p:
         print("Connecting to Chrome...")
-        browser = await p.chromium.connect_over_cdp("http://localhost:9222")
+        browser = await p.chromium.connect_over_cdp(CDP_URL)
         context = browser.contexts[0]
         page = await context.new_page()
 
         print("Loading quiz...")
-        await page.goto("https://www.dataexpert.io/lesson/cumulative-data-quiz", wait_until='networkidle', timeout=60000)
+        await page.goto(lesson_url("cumulative-data-quiz"), wait_until='networkidle', timeout=60000)
         await asyncio.sleep(2)
 
         # Click Quiz tab

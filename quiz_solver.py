@@ -2,20 +2,11 @@
 import asyncio
 import json
 import re
-import subprocess
-import os
-from pathlib import Path
 from datetime import datetime
 from playwright.async_api import async_playwright
 
+from common import CDP_PORT, CDP_URL, DATA_DIR, lesson_url
 from quiz_heuristics import get_answer
-
-BASE_URL = "https://www.dataexpert.io"
-DATA_DIR = Path(__file__).parent / "data"
-DATA_DIR.mkdir(exist_ok=True)
-
-# Remote debugging port
-DEBUG_PORT = 9222
 
 
 async def solve_quiz(slug: str, module_name: str = ""):
@@ -29,11 +20,11 @@ async def solve_quiz(slug: str, module_name: str = ""):
     }
 
     async with async_playwright() as p:
-        print("Connecting to Chrome on port 9222...")
+        print(f"Connecting to Chrome on port {CDP_PORT}...")
         print("Make sure Chrome is running with: open -a 'Google Chrome' --args --remote-debugging-port=9222")
 
         try:
-            browser = await p.chromium.connect_over_cdp(f"http://localhost:{DEBUG_PORT}")
+            browser = await p.chromium.connect_over_cdp(CDP_URL)
         except Exception as e:
             print(f"\nERROR: Could not connect to Chrome: {e}")
             print("\nTo fix this:")
@@ -62,7 +53,7 @@ async def solve_quiz(slug: str, module_name: str = ""):
         if not page:
             page = await context.new_page()
 
-        url = f"{BASE_URL}/lesson/{slug}"
+        url = lesson_url(slug)
         print(f"\n{'='*60}")
         print(f"Quiz: {slug}")
         print(f"{'='*60}")

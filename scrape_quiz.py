@@ -4,7 +4,7 @@ import json
 import re
 from playwright.async_api import async_playwright
 
-from common import BASE_URL, DATA_DIR, get_cookies_for_playwright
+from common import DATA_DIR, get_cookies_for_playwright, lesson_url
 
 
 async def scrape_quiz(slug: str):
@@ -17,7 +17,7 @@ async def scrape_quiz(slug: str):
 
         page = await context.new_page()
 
-        url = f"{BASE_URL}/lesson/{slug}"
+        url = lesson_url(slug)
         print(f"Loading: {url}")
         await page.goto(url, wait_until='networkidle', timeout=60000)
 

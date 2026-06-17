@@ -3,11 +3,8 @@ import asyncio
 import nodriver as uc
 import json
 import re
-from pathlib import Path
 
-BASE_URL = "https://www.dataexpert.io"
-DATA_DIR = Path(__file__).parent / "data"
-DATA_DIR.mkdir(exist_ok=True)
+from common import BASE_URL, DATA_DIR
 
 
 async def human_delay(min_sec=1.0, max_sec=2.0):

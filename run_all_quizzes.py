@@ -2,15 +2,11 @@
 import asyncio
 import json
 import re
-from pathlib import Path
 from datetime import datetime
 from playwright.async_api import async_playwright
 
+from common import CDP_URL, DATA_DIR, lesson_url
 from quiz_heuristics import get_answer
-
-BASE_URL = "https://www.dataexpert.io"
-DATA_DIR = Path(__file__).parent / "data"
-DATA_DIR.mkdir(exist_ok=True)
 
 CURRICULUM = {
     "Week 1: Data Modeling": [
@@ -87,7 +83,7 @@ async def solve_single_quiz(page, slug: str, title: str) -> dict:
     result = {"slug": slug, "title": title, "questions": [], "completed": False, "score": 0}
 
     try:
-        url = f"{BASE_URL}/lesson/{slug}"
+        url = lesson_url(slug)
         print(f"\n  [{title}]", flush=True)
         await page.goto(url, wait_until='networkidle', timeout=60000)
 
@@ -331,7 +327,7 @@ async def run_all_quizzes():
     async with async_playwright() as p:
         print("Connecting to Chrome...", flush=True)
         try:
-            browser = await p.chromium.connect_over_cdp("http://localhost:9222")
+            browser = await p.chromium.connect_over_cdp(CDP_URL)
         except Exception as e:
             print(f"ERROR: Could not connect to Chrome: {e}", flush=True)
             print("Make sure Chrome is running with: --remote-debugging-port=9222", flush=True)

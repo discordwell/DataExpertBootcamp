@@ -26,7 +26,8 @@ Quizzes are answered with one of two strategies:
   best guess used by `run_all_quizzes.py` and `quiz_solver.py`.
 - **Claude CLI** (`run_quizzes_v2.py`) — shells out to the `claude` CLI to answer
   multiple-choice, free-text, and SQL-writing questions, iterating on feedback. This is
-  the most capable runner.
+  the most capable runner. When the CLI can't return usable SQL it falls back to the
+  offline template generator in `quiz_sql.generate_sql`.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full component map and data flow.
 
@@ -72,15 +73,16 @@ git-ignored.
 
 ## Testing
 
-The pure logic (the answer heuristic and the cookie/session helpers) is covered by a
-browser-free pytest suite:
+The pure logic (the answer heuristic, the SQL template generator, and the cookie/session
+helpers) is covered by a browser-free pytest suite:
 
 ```bash
 python -m pytest
 ```
 
-The tests monkeypatch `browser_cookie3` so they run offline with no real cookies, and
-they lock in the heuristic's option-selection behavior.
+The tests monkeypatch `browser_cookie3` so they run offline with no real cookies, lock in
+the heuristic's option-selection behavior, and exercise every `quiz_sql` template branch
+(including the dict-shaped-columns regression).
 
 ## Responsible use
 
@@ -91,8 +93,9 @@ or services you aren't authorized to use, and respect DataExpert.io's terms of s
 ## Repository layout
 
 ```
-common.py            Shared config (BASE_URL, DATA_DIR) + cookie/session auth helpers
+common.py            Shared config (BASE_URL, DATA_DIR, CDP_URL, lesson_url) + auth helpers
 quiz_heuristics.py   Offline keyword heuristic for multiple-choice answers (pure, tested)
+quiz_sql.py          Offline template-based SQL generator / fallback (pure, tested)
 run_quizzes_v2.py    Primary runner — answers via the Claude CLI
 run_all_quizzes.py   Full-curriculum runner — answers via the offline heuristic
 quiz_solver.py       Early single-quiz solver (heuristic)

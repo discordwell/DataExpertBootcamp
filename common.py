@@ -28,6 +28,22 @@ DEFAULT_USER_AGENT = (
 
 COOKIE_DOMAIN = "dataexpert.io"
 
+# Chrome DevTools Protocol endpoint. The CDP-based runners attach to a Chrome
+# you started with ``--remote-debugging-port=9222`` so they drive your real,
+# already-authenticated tab instead of re-logging in. This used to be a literal
+# ``"http://localhost:9222"`` repeated in every runner.
+CDP_PORT = 9222
+CDP_URL = f"http://localhost:{CDP_PORT}"
+
+
+def lesson_url(slug: str) -> str:
+    """Return the full lesson/quiz URL for a lesson ``slug``.
+
+    Every runner and scraper navigates to ``{BASE_URL}/lesson/{slug}``; this
+    keeps that pattern in one place so a site change only needs editing here.
+    """
+    return f"{BASE_URL}/lesson/{slug}"
+
 
 def get_cookies_for_playwright(domain: str = COOKIE_DOMAIN) -> list:
     """Read Chrome cookies for ``domain`` and convert them to Playwright format.
