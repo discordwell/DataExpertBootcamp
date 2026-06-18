@@ -73,9 +73,10 @@ git-ignored.
 
 ## Testing
 
-The pure logic — the answer heuristic, the SQL template generator, the Claude-response
-parsers, the page-text/score interpreters, the cookie/session helpers, and the quiz
-curriculum — is covered by a browser-free pytest suite:
+The pure logic — the answer heuristic, the SQL template generator, the Claude-prompt
+builders, the Claude-response parsers, the page-text/score interpreters, the
+cookie/session helpers, and the quiz curriculum — is covered by a browser-free
+pytest suite:
 
 ```bash
 python -m pytest
@@ -83,8 +84,11 @@ python -m pytest
 
 The tests monkeypatch `browser_cookie3` so they run offline with no real cookies, lock in
 the heuristic's option-selection behavior, exercise every `quiz_sql` template branch
-(including the dict-shaped-columns regression), pin the `quiz_parsing` edge cases
-(multi-select de-duplication, markdown SQL fences, preamble stripping), pin the
+(including the dict-shaped-columns regression), pin the `quiz_prompts` builders
+(research-context injection, single/multi-select wording, SQL column normalization,
+optional feedback/sample-data sections, and the 5+-option lettering fix), pin the
+`quiz_parsing` edge cases (multi-select de-duplication, markdown SQL fences, preamble
+stripping), pin the
 `quiz_status` interpreters (score parsing — including not mistaking a date like
 `26/12/2025` for a score — the perfect-skip rule, and the status classifier), and
 guard the curriculum invariants (unique slugs, the flat list matching the week
@@ -103,6 +107,7 @@ common.py            Shared config (BASE_URL, DATA_DIR, CDP_URL, lesson_url) + a
 quizzes.py           Canonical quiz curriculum: CURRICULUM (by week) + ALL_QUIZZES (flat)
 quiz_heuristics.py   Offline keyword heuristic for multiple-choice answers (pure, tested)
 quiz_sql.py          Offline template-based SQL generator / fallback (pure, tested)
+quiz_prompts.py      Pure builders for the Claude CLI's MC/SQL/text prompts (tested)
 quiz_parsing.py      Pure parsers for the Claude CLI's MC/SQL/text responses (tested)
 quiz_status.py       Pure page-text interpreters: score/perfect/status (tested)
 run_quizzes_v2.py    Primary runner — answers via the Claude CLI

@@ -8,6 +8,7 @@ from playwright.async_api import async_playwright
 
 from common import CDP_URL, DATA_DIR, lesson_url
 from quiz_parsing import clean_text_response, extract_sql, parse_mc_answer
+from quiz_prompts import build_mc_prompt, build_sql_prompt, build_text_prompt
 from quiz_sql import generate_sql
 from quiz_status import (
     classify_status,
@@ -34,63 +35,17 @@ def solve_mc_with_claude(question: str, options: list, multi_select: bool = Fals
     For multi-select, may return multiple indices.
     Uses chain-of-thought prompting with structured thinking.
     """
-    # Format options with letters
-    options_text = "\n".join([f"{chr(65+i)}. {opt}" for i, opt in enumerate(options)])
-
-    # Dynamically set valid letters based on option count
     num_options = len(options)
-    if num_options == 2:
-        valid_letters = "A or B"
-    elif num_options == 3:
-        valid_letters = "A, B, or C"
-    else:
-        valid_letters = "A, B, C, or D"
 
-    # Load research context for difficult questions
-    research_context = load_research_context()
-
-    # Different instructions for multi-select vs single-select
-    if multi_select:
-        answer_instruction = f"[One or more letters, comma-separated if multiple: {valid_letters}]"
-        select_instruction = "This is a MULTI-SELECT question. You may need to select MORE THAN ONE answer. Select ALL answers that are correct."
-    else:
-        answer_instruction = f"[Single letter only: {valid_letters}]"
-        select_instruction = "This is a SINGLE-SELECT question. Choose the ONE best answer."
-
-    prompt = f"""You are answering a multiple choice question from a data engineering bootcamp quiz.
-
-<research_context>
-{research_context}
-</research_context>
-
-<question>
-{question}
-</question>
-
-<options>
-{options_text}
-</options>
-
-IMPORTANT: {select_instruction}
-
-Check the research_context above first! It contains verified correct answers for common tricky questions.
-
-Instructions:
-1. Check if this question matches any pattern in the research context - if so, use that answer
-2. If this involves code, trace through it step by step
-3. If this involves technical concepts, use the research context or search the web
-4. For True/False questions about CDC: triggers=TRUE, row-level only=FALSE
-5. For "always balanced" trees: prefer B-Tree over AVL
-6. For hyperparameter tuning methods: choose "All of the above" if available
-7. For MULTI-SELECT: carefully consider if multiple options could be correct
-
-<thinking>
-[Your analysis here]
-</thinking>
-
-<answer>
-{answer_instruction}
-</answer>"""
+    # Prompt construction (option lettering + single/multi-select instructions) is
+    # pure and unit tested in tests/test_quiz_prompts.py. The research context is
+    # the contents of data/quiz_research.md, read here (file I/O stays in the runner).
+    prompt = build_mc_prompt(
+        question,
+        options,
+        research_context=load_research_context(),
+        multi_select=multi_select,
+    )
 
     try:
         result = subprocess.run(
@@ -111,35 +66,8 @@ Instructions:
 def solve_text_response_with_claude(question: str, feedback: str = None) -> str:
     """Use Claude CLI to answer a free-form text response question (design questions, etc.)."""
 
-    prompt_parts = [
-        "You are answering a data engineering interview question. Write a thoughtful, detailed response.",
-        "",
-        f"**Question:** {question}",
-        "",
-    ]
-
-    if feedback:
-        prompt_parts.extend([
-            "**Previous attempt feedback:**",
-            feedback,
-            "",
-            "Please improve your answer based on this feedback.",
-            ""
-        ])
-
-    prompt_parts.extend([
-        "REQUIREMENTS:",
-        "1. Be specific and detailed in your answer",
-        "2. If asked about data modeling, describe specific tables, columns, and relationships",
-        "3. Use technical terminology appropriately",
-        "4. Structure your answer clearly (use bullet points or numbered lists where appropriate)",
-        "5. Keep your response concise but complete (2-4 paragraphs or equivalent)",
-        "6. Return ONLY your answer - no preamble like 'Here is my answer:'",
-        "",
-        "Your response:"
-    ])
-
-    prompt = "\n".join(prompt_parts)
+    # Prompt construction is pure and unit tested in tests/test_quiz_prompts.py.
+    prompt = build_text_prompt(question, feedback)
 
     try:
         result = subprocess.run(
@@ -175,77 +103,9 @@ def solve_sql_with_claude(question: str, table: str, expected_cols: list, feedba
         sample_data: Optional sample data from the table (SELECT * LIMIT 3 output)
     """
 
-    # Format columns with types for the prompt
-    if expected_cols and isinstance(expected_cols[0], dict):
-        col_specs = [f"{c['name']} ({c['type']})" for c in expected_cols]
-        col_names = [c['name'] for c in expected_cols]
-    else:
-        # Fallback for simple list of column names
-        col_specs = expected_cols
-        col_names = expected_cols
-
-    prompt_parts = [
-        "You are solving a SQL quiz question. The database uses Trino/Presto SQL syntax.",
-        "",
-        f"**Question:** {question}",
-        "",
-        f"**Available Table:** {table}",
-        "",
-    ]
-
-    # Add sample data if available - this helps Claude understand the actual table structure
-    if sample_data:
-        prompt_parts.extend([
-            "**Sample Data from Table (SELECT * LIMIT 3):**",
-            "```",
-            sample_data,
-            "```",
-            "",
-        ])
-
-    prompt_parts.append("**Expected Output Columns (in exact order with data types):**")
-
-    # Add each column on its own line for clarity
-    for i, spec in enumerate(col_specs, 1):
-        prompt_parts.append(f"  {i}. {spec}")
-
-    prompt_parts.append("")
-
-    if feedback:
-        prompt_parts.extend([
-            "**Previous attempt feedback:**",
-            feedback,
-            "",
-            "Please fix the SQL based on this feedback.",
-            ""
-        ])
-
-    prompt_parts.extend([
-        "CRITICAL REQUIREMENTS:",
-        f"1. SELECT columns in EXACT order: {', '.join(col_names)}",
-        "2. Column names must match EXACTLY (use AS to rename if needed)",
-        "3. Use Trino/Presto SQL syntax (NOT PostgreSQL)",
-        "4. Do NOT use DISTINCT ON (use ROW_NUMBER() OVER instead)",
-        "5. Do NOT use INTERVAL syntax like '30 minutes' - use date_diff() or date_add() functions",
-        "6. Return ONLY the SQL query - no explanations, no markdown",
-        "",
-        "TRINO JSON FUNCTIONS (use these, not PostgreSQL syntax):",
-        "- json_extract_scalar(column, '$.field') - returns VARCHAR",
-        "- json_extract(column, '$.array') - returns JSON",
-        "- CAST(json_extract(col, '$.items') AS ARRAY(ROW(sku VARCHAR, price DOUBLE, qty INTEGER))) - for arrays",
-        "- Use CROSS JOIN UNNEST(...) AS t(field1, field2) to flatten arrays",
-        "",
-        "HOW TO INTERPRET VALIDATION ERRORS:",
-        "- 'Right answer has N rows. Your query has M rows' → Use WHERE to filter, NOT LIMIT or ORDER BY",
-        "  Example: 'Only include items where total_price > 25' means WHERE total_price > 25",
-        "- 'Value should be X but value is Y' → Check your WHERE/filter conditions",
-        "- 'column: region ! Value should be US but value is null' → The field is in a nested location",
-        "  Check the sample data to find where region/channel are located (maybe inside items array)",
-        "",
-        "SQL:"
-    ])
-
-    prompt = "\n".join(prompt_parts)
+    # Prompt construction (column normalization + sample-data/feedback sections) is
+    # pure and unit tested in tests/test_quiz_prompts.py.
+    prompt = build_sql_prompt(question, table, expected_cols, feedback, sample_data)
 
     try:
         # Call Claude CLI with the prompt in print mode (non-interactive)

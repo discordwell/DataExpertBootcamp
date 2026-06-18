@@ -56,6 +56,16 @@ class TestParseMcAnswer:
         # Only A/B are valid for a 2-option question; D is dropped, no match -> [0].
         assert parse_mc_answer("<answer>D</answer>", 2) == [0]
 
+    def test_fifth_option_is_selectable(self):
+        # Regression: valid letters used to be capped at "ABCD", so a 5-option
+        # question could never select E. The full alphabet is used now (matching
+        # quiz_prompts' generalized lettering).
+        assert parse_mc_answer("<answer>E</answer>", 5) == [4]
+        assert parse_mc_answer("I'll go with E.", 5) == [4]
+
+    def test_multi_select_includes_letters_beyond_d(self):
+        assert parse_mc_answer("<answer>A, E</answer>", 5, multi_select=True) == [0, 4]
+
     def test_no_usable_letter_falls_back_to_zero(self):
         assert parse_mc_answer("I really cannot tell.", 4) == [0]
 

@@ -86,6 +86,32 @@ plain name strings.
 to return usable SQL. Extracting it from the runner (mirroring `quiz_heuristics`) keeps
 it unit-testable in `tests/test_quiz_sql.py` without a browser or the CLI.
 
+### `quiz_prompts.py`
+Pure builders for the prompts `run_quizzes_v2.py` sends to the Claude CLI — the
+counterpart to `quiz_parsing` (which parses the responses):
+
+- `build_mc_prompt(question, options, research_context, multi_select)` — letters the
+  options, injects the research context, and switches the answer-format / select
+  instructions between single- and multi-select.
+- `build_sql_prompt(question, table, expected_cols, feedback, sample_data)` — the
+  Trino/Presto SQL prompt; normalizes the `{"name", "type"}` column dicts (or plain
+  name strings) and includes the optional sample-data and previous-attempt-feedback
+  sections.
+- `build_text_prompt(question, feedback)` — the free-form design/interview prompt,
+  with an optional feedback section.
+- Helpers `option_letters`, `format_options`, `valid_letters_phrase`, and
+  `normalize_sql_columns` carry the fiddly bits.
+
+This construction used to be inlined inside the three `solve_*_with_claude` functions,
+right next to the `subprocess.run` call, where it could not be tested. Pulling it out
+(like `quiz_parsing`) makes the prompt text unit-testable in
+`tests/test_quiz_prompts.py`, and the extraction was verified **byte-for-byte** against
+the original inline f-strings over **90k randomized inputs** (for the realistic
+≤4-option range) before the runner was rewired. The move also fixed a **latent bug**:
+the option-letter logic capped at `A`-`D`, so a question with five or more options
+could never have its later options offered to — or recognized from — the model;
+`valid_letters_phrase` and `quiz_parsing.parse_mc_answer` now use the full alphabet.
+
 ### `quiz_parsing.py`
 Pure parsers for the Claude CLI's raw responses, used by `run_quizzes_v2.py`:
 
@@ -177,9 +203,12 @@ logic and stay browser-free (no Playwright import required to run them):
 - `tests/test_quiz_heuristics.py` — locks in the heuristic's selections and edge cases.
 - `tests/test_quiz_sql.py` — exercises each SQL template branch and guards the
   dict-shaped-columns regression (`generate_sql` used to crash joining column dicts).
+- `tests/test_quiz_prompts.py` — pins the Claude-prompt builders: research-context
+  injection, single/multi-select wording, SQL column normalization, the optional
+  feedback/sample-data sections, and the 5+-option lettering fix.
 - `tests/test_quiz_parsing.py` — pins the Claude-response parsers: MC letter
-  extraction, multi-select de-duplication, markdown SQL-fence stripping, and
-  preamble cleanup.
+  extraction, multi-select de-duplication (including letters beyond D), markdown
+  SQL-fence stripping, and preamble cleanup.
 - `tests/test_quiz_status.py` — pins the page-text interpreters: score parsing
   (including the date-isn't-a-score regression), the perfect-completion skip
   rule, the status classifier's five outcomes, and quiz-completion detection.

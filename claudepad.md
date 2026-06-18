@@ -2,6 +2,32 @@
 
 ## Session Summaries (most recent first; keep 20)
 
+### 2026-06-18T00:00Z — Maintenance pass: extract+test the Claude prompt builders
+Continued the "pure logic lives in tested modules / single source of truth"
+trajectory — the last untested pure logic in the v2 runner was the *prompt
+construction* (the parsing half already lived in `quiz_parsing`). Suite grew
+166 → 200 green, still browser-free.
+
+- **`quiz_prompts.py` (new):** extracted the three Claude-prompt builders that were
+  inlined inside `run_quizzes_v2`'s `solve_*_with_claude` functions next to the
+  `subprocess.run` call — `build_mc_prompt` (option lettering + research-context
+  injection + single/multi-select wording), `build_sql_prompt` (Trino prompt +
+  `{"name","type"}` column normalization + optional sample-data/feedback sections),
+  and `build_text_prompt` (design answers + optional feedback), plus helpers
+  `option_letters` / `format_options` / `valid_letters_phrase` / `normalize_sql_columns`.
+  Verified **byte-for-byte identical** to the original inline f-strings over **90k
+  randomized inputs** (for the realistic ≤4-option range) before rewiring the runner.
+  New `tests/test_quiz_prompts.py` (32 cases).
+- **Latent bug fixed — the 5+-option cap.** Option letters were hard-coded to `A`-`D`
+  in both the prompt (`valid_letters`/`chr(65+i)`) and the parser
+  (`quiz_parsing.parse_mc_answer`'s `"ABCD"[:n]`), so a question with five or more
+  options could never have its later options offered to — or recognized from — the
+  model. Both now use the full alphabet; phrasing/parsing for ≤4 options is unchanged.
+  Added 2 `test_quiz_parsing` regression cases (selecting `E`, multi-select past `D`).
+- Rewired the three `solve_*_with_claude` functions to call the builders; net ~−140
+  lines of inline prompt strings removed from the runner. No behavior change for the
+  bootcamp's actual (≤4-option) quizzes.
+
 ### 2026-06-17T23:30Z — Maintenance pass: extract+test the page-text/score interpreters
 Continued the "pure logic lives in tested modules / single source of truth"
 trajectory. Suite grew 134 → 166 green, still browser-free.
@@ -99,11 +125,13 @@ flows (which can't be exercised offline).
   SQL, v2 falls back to the offline template generator `quiz_sql.generate_sql`.
 - **Pure logic lives in tested modules:** `common.py` (config + auth helpers, incl.
   `CDP_URL`/`lesson_url`), `quizzes.py` (the canonical curriculum — `CURRICULUM` +
-  `ALL_QUIZZES`), `quiz_heuristics.py`, `quiz_sql.py`, `quiz_parsing.py` (Claude
-  MC/SQL/text response parsers), and `quiz_status.py` (page-text interpreters —
+  `ALL_QUIZZES`), `quiz_heuristics.py`, `quiz_sql.py`, `quiz_prompts.py` (Claude
+  MC/SQL/text prompt *builders*), `quiz_parsing.py` (Claude MC/SQL/text response
+  *parsers*), and `quiz_status.py` (page-text interpreters —
   `parse_score`/`is_perfect_completion`/`classify_status`/`is_quiz_complete`) are all
-  browser-free and unit-tested. Every script imports config from `common` and the
-  quiz list from `quizzes`.
+  browser-free and unit-tested. `run_quizzes_v2`'s `solve_*_with_claude` functions are
+  now thin: build prompt (`quiz_prompts`) → call CLI → parse (`quiz_parsing`). Every
+  script imports config from `common` and the quiz list from `quizzes`.
 - **Auth model:** scripts reuse the user's logged-in Chrome session — cookies via
   `browser_cookie3`, and/or CDP attach to Chrome started with
   `--remote-debugging-port=9222`. No credentials are stored.

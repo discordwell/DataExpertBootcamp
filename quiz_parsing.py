@@ -11,6 +11,7 @@ It now lives here, mirroring ``quiz_heuristics`` and ``quiz_sql``: no network,
 browser, or CLI, so it is covered directly by ``tests/test_quiz_parsing.py``.
 """
 import re
+import string
 from typing import List, Optional
 
 # A SQL answer is only accepted if it starts with one of these statements.
@@ -34,8 +35,10 @@ def parse_mc_answer(response: str, num_options: int, multi_select: bool = False)
         0-based indices into the option list. Always non-empty: falls back to
         ``[0]`` when nothing usable is found.
     """
-    # Valid answer letters for this question, e.g. "ABCD" for 4 options.
-    valid_chars = "ABCD"[:num_options]
+    # Valid answer letters for this question, e.g. "ABCD" for 4 options. Uses the
+    # full alphabet (not a hard-coded "ABCD") so questions with five or more
+    # options stay recognizable — matching quiz_prompts' generalized lettering.
+    valid_chars = string.ascii_uppercase[:num_options]
 
     # Prefer an explicit <answer>...</answer> block.
     answer_match = re.search(r'<answer>\s*([A-Za-z,\s]+)\s*</answer>', response)
