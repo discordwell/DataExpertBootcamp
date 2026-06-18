@@ -7,6 +7,7 @@ from playwright.async_api import async_playwright
 
 from common import CDP_PORT, CDP_URL, DATA_DIR, lesson_url
 from quiz_heuristics import get_answer
+from quiz_status import is_quiz_complete
 
 
 async def solve_quiz(slug: str, module_name: str = ""):
@@ -94,7 +95,7 @@ async def solve_quiz(slug: str, module_name: str = ""):
             page_text = await page.evaluate("document.body.innerText")
 
             # Check completion
-            if "Quiz Complete" in page_text or "You passed" in page_text:
+            if is_quiz_complete(page_text):
                 print("\n✓ Quiz completed!")
                 quiz_data["completed"] = True
                 break

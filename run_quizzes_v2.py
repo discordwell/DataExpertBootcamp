@@ -9,6 +9,12 @@ from playwright.async_api import async_playwright
 from common import CDP_URL, DATA_DIR, lesson_url
 from quiz_parsing import clean_text_response, extract_sql, parse_mc_answer
 from quiz_sql import generate_sql
+from quiz_status import (
+    classify_status,
+    is_perfect_completion,
+    is_quiz_complete,
+    parse_score,
+)
 from quizzes import ALL_QUIZZES, CURRICULUM
 
 RESEARCH_FILE = DATA_DIR / "quiz_research.md"
@@ -297,25 +303,20 @@ async def solve_quiz(page, slug: str, title: str) -> dict:
         # Check if already completed - but only skip if perfect score (100%)
         page_text = await page.evaluate("document.body.innerText")
         if "Lesson Completed" in page_text and "passed the quiz" in page_text.lower():
-            # Check for score - look for "X/X" pattern followed by (100%) or similar
-            # Use pattern that matches quiz scores like "5/5" with percentage, not dates like "26/12/2025"
-            score_match = re.search(r'(\d+)/(\d+)\s*\((\d+)%\)', page_text)
-
-            is_perfect = False
-            if score_match:
-                got, total, pct = int(score_match.group(1)), int(score_match.group(2)), int(score_match.group(3))
-                if pct == 100 and got == total:
-                    is_perfect = True
-                    print(f"    Already perfect ({got}/{total} = {pct}%) - skipping", flush=True)
-                else:
-                    print(f"    Completed but not perfect ({got}/{total} = {pct}%) - retaking", flush=True)
+            # Score parsing + the "already perfect, skip" rule live in quiz_status
+            # (pure, tested). The score regex used to be inlined here and at two
+            # other call sites; it deliberately requires a trailing "(N%)" so it
+            # matches a quiz score like "5/5 (100%)" and not a date like 26/12/2025.
+            score = parse_score(page_text)
+            is_perfect = is_perfect_completion(page_text)
+            if score is not None:
+                state = "Already perfect" if is_perfect else "Completed but not perfect"
+                verb = "skipping" if is_perfect else "retaking"
+                print(f"    {state} ({score.got}/{score.total} = {score.pct}%) - {verb}", flush=True)
+            elif is_perfect:
+                print("    Already perfect (100%) - skipping", flush=True)
             else:
-                # Fallback: look for just 100%
-                if "(100%)" in page_text:
-                    is_perfect = True
-                    print("    Already perfect (100%) - skipping", flush=True)
-                else:
-                    print("    Completed (score pattern not found) - retaking", flush=True)
+                print("    Completed (score pattern not found) - retaking", flush=True)
 
             if is_perfect:
                 result["completed"] = True
@@ -339,22 +340,16 @@ async def solve_quiz(page, slug: str, title: str) -> dict:
         # Check again after clicking Quiz tab - only skip if perfect
         page_text = await page.evaluate("document.body.innerText")
         if "Lesson Completed" in page_text or "successfully passed" in page_text.lower():
-            # Check for perfect score before skipping - match "X/X (100%)" pattern
-            score_match = re.search(r'(\d+)/(\d+)\s*\((\d+)%\)', page_text)
-            if score_match:
-                got, total, pct = int(score_match.group(1)), int(score_match.group(2)), int(score_match.group(3))
-                if pct == 100 and got == total:
-                    print(f"    Already perfect ({got}/{total} = {pct}%) - skipping", flush=True)
-                    result["completed"] = True
-                    result["score"] = 1
-                    return result
-                else:
-                    print(f"    Not perfect ({got}/{total} = {pct}%) - retaking", flush=True)
-            elif "(100%)" in page_text:
-                print("    Already perfect (100%) - skipping", flush=True)
+            # Same "already perfect, skip" rule as above, via quiz_status.
+            score = parse_score(page_text)
+            if is_perfect_completion(page_text):
+                label = f"{score.got}/{score.total} = {score.pct}%" if score is not None else "100%"
+                print(f"    Already perfect ({label}) - skipping", flush=True)
                 result["completed"] = True
                 result["score"] = 1
                 return result
+            elif score is not None:
+                print(f"    Not perfect ({score.got}/{score.total} = {score.pct}%) - retaking", flush=True)
             # Continue to retake if not perfect or score unknown
 
         # Click Start Quiz button
@@ -393,7 +388,7 @@ async def solve_quiz(page, slug: str, title: str) -> dict:
             full_text = await page.evaluate("document.body.innerText")
 
             # Check if quiz complete
-            if "Quiz Complete" in full_text or "You passed" in full_text:
+            if is_quiz_complete(full_text):
                 result["completed"] = True
                 print("    Quiz Complete!", flush=True)
                 break
@@ -971,7 +966,7 @@ async def solve_quiz(page, slug: str, title: str) -> dict:
 
                 # Check for quiz completion
                 new_text = await page.evaluate("document.body.innerText")
-                if "Quiz Complete" in new_text or "You passed" in new_text or "100% Complete" in new_text:
+                if is_quiz_complete(new_text, check_progress=True):
                     result["completed"] = True
                     print("    Quiz Complete!", flush=True)
                     break
@@ -1216,7 +1211,7 @@ async def solve_quiz(page, slug: str, title: str) -> dict:
             for wait_attempt in range(5):
                 new_text = await page.evaluate("document.body.innerText")
                 # Check if quiz is complete
-                if "Quiz Complete" in new_text or "You passed" in new_text or "100% Complete" in new_text:
+                if is_quiz_complete(new_text, check_progress=True):
                     result["completed"] = True
                     print("    Quiz Complete!", flush=True)
                     break
@@ -1326,28 +1321,15 @@ async def check_quiz_status(page, slug: str, title: str) -> dict:
         }""")
         await asyncio.sleep(1.5)
 
-        # Get page text and look for score
+        # Read the page text and classify it. The score regex and the
+        # perfect/incomplete/completed/not_started/unknown decision live in
+        # quiz_status (pure, tested) — this used to be a third inlined copy of the
+        # score regex.
         page_text = await page.evaluate("document.body.innerText")
-
-        # Look for score pattern: "X/X (Y%)"
-        score_match = re.search(r'(\d+)/(\d+)\s*\((\d+)%\)', page_text)
-        if score_match:
-            got, total, pct = int(score_match.group(1)), int(score_match.group(2)), int(score_match.group(3))
-            result["score"] = f"{got}/{total} ({pct}%)"
-            result["status"] = "perfect" if pct == 100 else "incomplete"
-            return result
-
-        # Check for completion indicators
-        if "Lesson Completed" in page_text or "passed the quiz" in page_text.lower():
-            result["status"] = "completed"
-            # Try to find any percentage
-            pct_match = re.search(r'\((\d+)%\)', page_text)
-            if pct_match:
-                result["score"] = f"({pct_match.group(1)}%)"
-        elif "Start Quiz" in page_text:
-            result["status"] = "not_started"
-        else:
-            result["status"] = "unknown"
+        status, score = classify_status(page_text)
+        result["status"] = status
+        if score is not None:
+            result["score"] = score
 
     except Exception as e:
         result["status"] = f"error: {str(e)[:50]}"

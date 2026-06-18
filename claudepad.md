@@ -2,6 +2,27 @@
 
 ## Session Summaries (most recent first; keep 20)
 
+### 2026-06-17T23:30Z — Maintenance pass: extract+test the page-text/score interpreters
+Continued the "pure logic lives in tested modules / single source of truth"
+trajectory. Suite grew 134 → 166 green, still browser-free.
+
+- **`quiz_status.py` (new):** extracted the page-`innerText` interpreters that were
+  inlined in `run_quizzes_v2.py`. The `X/Y (Z%)` score regex was **duplicated three
+  times** (the two already-completed checks in `solve_quiz` + `check_quiz_status`),
+  and the quiz-completion string check was scattered across both runners. New pure
+  helpers: `parse_score` (→ `Score` named tuple; the trailing `(N%)` is required so a
+  date like `26/12/2025` isn't read as a score), `is_perfect_completion` (the
+  "already perfect, skip" rule), `classify_status` (perfect/incomplete/completed/
+  not_started/unknown for the status report), and `is_quiz_complete(text,
+  check_progress=…)`. Verified the new helpers make **identical decisions** to the
+  original inline logic across **200k randomized inputs** over all five call sites
+  before rewiring. New `tests/test_quiz_status.py` (32 cases).
+- Rewired `run_quizzes_v2.py` (3 score sites + 3 completion checks) and
+  `quiz_solver.py` (1 completion check) to the shared helpers. Net −17 lines in the
+  two runners; the score regex no longer appears anywhere in the runners.
+- Messages preserved verbatim (sites print `5/5 = 100%` vs the status report's
+  `5/5 (100%)` — both kept exactly).
+
 ### 2026-06-17T13:17Z — Maintenance pass: centralize curriculum, extract+test response parsers
 Continued the "pure logic lives in tested modules / single source of truth" trajectory.
 Suite grew 92 → 134 green, still browser-free.
@@ -78,9 +99,11 @@ flows (which can't be exercised offline).
   SQL, v2 falls back to the offline template generator `quiz_sql.generate_sql`.
 - **Pure logic lives in tested modules:** `common.py` (config + auth helpers, incl.
   `CDP_URL`/`lesson_url`), `quizzes.py` (the canonical curriculum — `CURRICULUM` +
-  `ALL_QUIZZES`), `quiz_heuristics.py`, `quiz_sql.py`, and `quiz_parsing.py` (Claude
-  MC/SQL/text response parsers) are all browser-free and unit-tested. Every script
-  imports config from `common` and the quiz list from `quizzes`.
+  `ALL_QUIZZES`), `quiz_heuristics.py`, `quiz_sql.py`, `quiz_parsing.py` (Claude
+  MC/SQL/text response parsers), and `quiz_status.py` (page-text interpreters —
+  `parse_score`/`is_perfect_completion`/`classify_status`/`is_quiz_complete`) are all
+  browser-free and unit-tested. Every script imports config from `common` and the
+  quiz list from `quizzes`.
 - **Auth model:** scripts reuse the user's logged-in Chrome session — cookies via
   `browser_cookie3`, and/or CDP attach to Chrome started with
   `--remote-debugging-port=9222`. No credentials are stored.

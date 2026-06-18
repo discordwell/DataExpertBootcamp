@@ -103,6 +103,32 @@ could not be tested. Pulling it into a pure module (like `quiz_heuristics` and
 `tests/test_quiz_parsing.py`. The extraction was verified byte-for-byte against the
 original inline logic over 100k randomized inputs.
 
+### `quiz_status.py`
+Pure interpreters for a quiz/lesson page's `innerText`, used by `run_quizzes_v2.py`
+(and `quiz_solver.py`):
+
+- `parse_score(text)` — pulls the `X/Y (Z%)` score out of the page as a `Score`
+  named tuple. The pattern **requires** the trailing `(N%)`, which is what stops
+  it from mistaking a calendar date like `26/12/2025` for a `got/total` fraction.
+- `is_perfect_completion(text)` — the canonical "this quiz is already perfect,
+  skip it" rule: a 100%-and-all-correct score, or a bare `(100%)` marker when no
+  fraction is present.
+- `classify_status(text)` — for the no-retake status report; returns one of
+  `perfect` / `incomplete` / `completed` / `not_started` / `unknown` plus a
+  human-readable score.
+- `is_quiz_complete(text, check_progress=…)` — whether an in-progress quiz has
+  finished (`Quiz Complete` / `You passed`, optionally also a `100% Complete`
+  progress bar).
+
+The `X/Y (Z%)` score regex was **inlined three times** inside `run_quizzes_v2`'s
+browser coroutines (the two already-completed checks in `solve_quiz` and the
+status check), and the quiz-completion string check was scattered across both
+runners. Centralizing the decisions here removes that duplication and — like the
+other pure modules — makes the date-vs-score edge case unit-testable in
+`tests/test_quiz_status.py`. The extraction was verified to make identical
+decisions to the original inline logic over 200k randomized inputs before the
+runners were rewired.
+
 ## The scripts
 
 | Layer | Files | Notes |
@@ -154,6 +180,9 @@ logic and stay browser-free (no Playwright import required to run them):
 - `tests/test_quiz_parsing.py` — pins the Claude-response parsers: MC letter
   extraction, multi-select de-duplication, markdown SQL-fence stripping, and
   preamble cleanup.
+- `tests/test_quiz_status.py` — pins the page-text interpreters: score parsing
+  (including the date-isn't-a-score regression), the perfect-completion skip
+  rule, the status classifier's five outcomes, and quiz-completion detection.
 - `tests/test_quizzes.py` — guards the curriculum invariants: eight weeks, fifty
   quizzes, unique slugs, and a flat `ALL_QUIZZES` that matches the week grouping.
 - `tests/test_common.py` — verifies cookie conversion, session setup, and the
