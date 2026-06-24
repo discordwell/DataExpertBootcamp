@@ -1,14 +1,19 @@
 """Pure helpers for interpreting a DataExpert quiz/lesson page's text.
 
-The runners read ``document.body.innerText`` and then have to decide three things
-from it: what score the page reports, whether a quiz is already perfect (so it can
-be skipped on a re-run), and — for the status report — how to classify the lesson.
+The runners read ``document.body.innerText`` and then have to decide several
+things from it: what score the page reports, whether a quiz is already perfect
+(so it can be skipped on a re-run), how to classify the lesson for the status
+report, and — after each "Check Answer" — whether the answer was graded
+correct/incorrect and whether the quiz has finished.
 
-That decision logic is pure regex/string work with a genuine edge case: the score
+That decision logic is pure regex/string work with genuine edge cases: the score
 pattern must match a quiz score like ``5/5 (100%)`` but *not* a calendar date such
-as ``26/12/2025``. It used to be inlined and **duplicated three times** inside
-``run_quizzes_v2``'s browser coroutines (the score regex appeared at three call
-sites), where it could not be unit-tested.
+as ``26/12/2025``, and the correct/incorrect verdict must not be fooled by a
+``"does not match"`` sitting next to an ``"Output matches"``. It used to be
+inlined and duplicated across ``run_quizzes_v2``'s browser coroutines (the score
+regex appeared at three call sites; the verdict check at two more) and across the
+``run_all_quizzes`` / ``quiz_solver`` runners, where it could not be unit-tested
+and had quietly drifted out of sync.
 
 Like ``quiz_heuristics`` / ``quiz_sql`` / ``quiz_parsing``, this module is
 browser-free, so it is covered directly by ``tests/test_quiz_status.py``.
@@ -104,3 +109,41 @@ def is_quiz_complete(text: str, *, check_progress: bool = False) -> bool:
     if check_progress and "100% Complete" in text:
         return True
     return False
+
+
+class AnswerResult(NamedTuple):
+    """How the grader's feedback text reads after a single answer is checked.
+
+    ``correct`` / ``incorrect`` are independent (a page may show neither yet);
+    ``complete`` mirrors :func:`is_quiz_complete` with the default markers.
+    """
+
+    correct: bool
+    incorrect: bool
+    complete: bool
+
+
+def interpret_answer_result(text: str) -> AnswerResult:
+    """Interpret a post-"Check Answer" page's text into correct/incorrect/complete.
+
+    This is the single source of truth for reading the grader's verdict, shared
+    by every runner. It used to be re-inlined at four call sites that had quietly
+    **drifted**: the v2 SQL site lacked the v2 MC site's ``"does not match"``
+    guard, and the older ``run_all_quizzes`` / ``quiz_solver`` runners keyed off a
+    looser bare ``"Correct"`` rather than the primary runner's proven ``"Correct!"``.
+
+    The signals mirror the primary (49/49) runner:
+
+    - ``correct``: an explicit ``"Correct!"``, or an ``"Output matches"`` SQL pass
+      that is *not* contradicted by a ``"does not match"`` elsewhere on the page.
+    - ``incorrect``: an explicit ``"Incorrect"`` or a SQL ``"does not match"``.
+    - ``complete``: the quiz has finished (``is_quiz_complete``'s default markers).
+
+    On the strings the live grader actually emits (``"Correct!"`` on a pass,
+    ``"Incorrect"`` on a miss) this returns exactly what each runner's old inline
+    check did; it only diverges on contrived inputs (a bare un-banged
+    ``"Correct"``, or both ``"Output matches"`` and ``"does not match"`` at once).
+    """
+    correct = "Correct!" in text or ("Output matches" in text and "does not match" not in text)
+    incorrect = "Incorrect" in text or "does not match" in text
+    return AnswerResult(correct=correct, incorrect=incorrect, complete=is_quiz_complete(text))

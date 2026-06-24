@@ -12,6 +12,7 @@ from quiz_prompts import build_mc_prompt, build_sql_prompt, build_text_prompt
 from quiz_sql import generate_sql
 from quiz_status import (
     classify_status,
+    interpret_answer_result,
     is_perfect_completion,
     is_quiz_complete,
     parse_score,
@@ -735,16 +736,11 @@ async def solve_quiz(page, slug: str, title: str) -> dict:
                         submitted = True
                         await asyncio.sleep(2)
 
-                        # Check if correct
-                        result_check = await page.evaluate("""() => {
-                            const text = document.body.innerText;
-                            return {
-                                correct: text.includes('Correct!') || text.includes('Output matches'),
-                                incorrect: text.includes('Incorrect') || text.includes('does not match')
-                            };
-                        }""")
-
-                        if result_check['correct']:
+                        # Check if correct. Reading the grader's verdict out of the
+                        # page text is pure logic shared via quiz_status (the same
+                        # interpreter the MC path uses, so the two no longer drift).
+                        result_text = await page.evaluate("document.body.innerText")
+                        if interpret_answer_result(result_text).correct:
                             print(f"         ✓ CORRECT!", flush=True)
                             result["score"] += 1
                             solved = True
@@ -792,15 +788,12 @@ async def solve_quiz(page, slug: str, title: str) -> dict:
                     except Exception as e:
                         print(f"         Could not save failure details: {e}", flush=True)
 
-                # Check for quiz completion before navigating
-                completion_check = await page.evaluate("""() => {
-                    const text = document.body.innerText;
-                    return {
-                        complete: text.includes('Quiz Complete') || text.includes('You passed') || text.includes('100% Complete'),
-                        lessonComplete: text.includes('Lesson Completed')
-                    };
-                }""")
-                if completion_check['complete'] or completion_check['lessonComplete']:
+                # Check for quiz completion before navigating. The completion
+                # markers live in quiz_status.is_quiz_complete (check_progress adds
+                # the "100% Complete" bar); "Lesson Completed" is the lesson-level
+                # marker shown once the whole lesson is done.
+                completion_text = await page.evaluate("document.body.innerText")
+                if is_quiz_complete(completion_text, check_progress=True) or "Lesson Completed" in completion_text:
                     result["completed"] = True
                     print("    Quiz Complete!", flush=True)
                     break
@@ -1009,26 +1002,22 @@ async def solve_quiz(page, slug: str, title: str) -> dict:
             }""")
             print(f"         Buttons: {buttons_info[:5]}", flush=True)
 
-            # Check result - look for result in modal before it closes
+            # Check result - read the modal's verdict before it closes. The
+            # correct/incorrect/complete interpretation is pure and shared via
+            # quiz_status.interpret_answer_result (same logic as the SQL path).
             await asyncio.sleep(0.5)
-            result_info = await page.evaluate("""() => {
-                const text = document.body.innerText;
-                return {
-                    correct: text.includes('Correct!') || (text.includes('Output matches') && !text.includes('does not match')),
-                    incorrect: text.includes('Incorrect') || text.includes('does not match'),
-                    complete: text.includes('Quiz Complete') || text.includes('You passed')
-                };
-            }""")
+            result_text = await page.evaluate("document.body.innerText")
+            result_info = interpret_answer_result(result_text)
 
-            if result_info['complete']:
+            if result_info.complete:
                 result["completed"] = True
                 print("    Quiz Complete!", flush=True)
                 break
 
-            if result_info['correct']:
+            if result_info.correct:
                 result["score"] += 1
                 print(f"         ✓ Correct!", flush=True)
-            elif result_info['incorrect']:
+            elif result_info.incorrect:
                 print(f"         ✗ Incorrect", flush=True)
                 # Log full question and all options for wrong answers
                 print(f"         --- WRONG ANSWER DEBUG ---", flush=True)

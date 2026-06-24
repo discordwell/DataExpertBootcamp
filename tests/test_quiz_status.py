@@ -9,8 +9,10 @@ a calendar date like ``26/12/2025`` for a score — unit-testable with no browse
 import pytest
 
 from quiz_status import (
+    AnswerResult,
     Score,
     classify_status,
+    interpret_answer_result,
     is_perfect_completion,
     is_quiz_complete,
     parse_score,
@@ -156,3 +158,73 @@ class TestIsQuizComplete:
     def test_not_complete(self):
         assert is_quiz_complete("Question 3 of 6") is False
         assert is_quiz_complete("Question 3 of 6", check_progress=True) is False
+
+
+# ---------------------------------------------------------------------------
+# interpret_answer_result
+# ---------------------------------------------------------------------------
+
+class TestInterpretAnswerResult:
+    # --- The strings the live grader actually emits. On these, the consolidated
+    # interpreter must agree with every runner's old inline check (no regression).
+
+    def test_mc_or_text_pass(self):
+        assert interpret_answer_result("Correct! Well done.") == AnswerResult(
+            correct=True, incorrect=False, complete=False
+        )
+
+    def test_sql_pass_with_banged_correct(self):
+        r = interpret_answer_result("Correct! Output matches expected output.")
+        assert (r.correct, r.incorrect) == (True, False)
+
+    def test_sql_pass_without_bang(self):
+        # SQL grader can report success via "Output matches" with no "Correct!".
+        r = interpret_answer_result("Output matches expected output")
+        assert (r.correct, r.incorrect) == (True, False)
+
+    def test_mc_miss(self):
+        # Note the explanatory lowercase "correct" must NOT read as a pass.
+        r = interpret_answer_result("Incorrect. The correct answer is B.")
+        assert (r.correct, r.incorrect) == (False, True)
+
+    def test_sql_miss(self):
+        r = interpret_answer_result("Incorrect. Your output does not match the expected output.")
+        assert (r.correct, r.incorrect) == (False, True)
+
+    def test_mid_quiz_no_verdict_yet(self):
+        r = interpret_answer_result("Question 3 of 6")
+        assert r == AnswerResult(correct=False, incorrect=False, complete=False)
+
+    # --- Edge cases that motivated centralizing this (the old inline copies had
+    # drifted on exactly these).
+
+    def test_output_matches_guarded_by_does_not_match(self):
+        # "does not match" anywhere vetoes a stray "Output matches" — the v2 SQL
+        # site lacked this guard before; now it matches the v2 MC site.
+        r = interpret_answer_result("Output matches header, but result does not match")
+        assert (r.correct, r.incorrect) == (False, True)
+
+    def test_bare_unbanged_correct_is_not_a_pass(self):
+        # The proven primary runner keys off "Correct!"; a bare "Correct" (as in
+        # "The Correct answer was...") is not a success signal. The older runners
+        # used to fire on it.
+        assert interpret_answer_result("The Correct option is highlighted.").correct is False
+
+    def test_incorrect_substring_correct_is_not_a_pass(self):
+        # "Incorrect" contains a lowercase "correct" but not "Correct!".
+        assert interpret_answer_result("Incorrect").correct is False
+
+    # --- complete mirrors is_quiz_complete's default markers.
+
+    @pytest.mark.parametrize("text", ["Quiz Complete", "You passed!"])
+    def test_complete_markers(self, text):
+        assert interpret_answer_result(text).complete is True
+
+    def test_progress_bar_is_not_complete_here(self):
+        # interpret_answer_result uses the *default* (non-progress) markers, so a
+        # bare "100% Complete" progress bar is not yet "complete".
+        assert interpret_answer_result("100% Complete").complete is False
+
+    def test_pass_and_complete_together(self):
+        r = interpret_answer_result("Correct! Quiz Complete")
+        assert r == AnswerResult(correct=True, incorrect=False, complete=True)

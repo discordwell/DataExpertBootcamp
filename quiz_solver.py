@@ -7,7 +7,7 @@ from playwright.async_api import async_playwright
 
 from common import CDP_PORT, CDP_URL, DATA_DIR, lesson_url
 from quiz_heuristics import get_answer
-from quiz_status import is_quiz_complete
+from quiz_status import interpret_answer_result, is_quiz_complete
 
 
 async def solve_quiz(slug: str, module_name: str = ""):
@@ -172,9 +172,11 @@ async def solve_quiz(slug: str, module_name: str = ""):
                 await check_btn.click()
                 await asyncio.sleep(1)
 
-            # Record result
+            # Record result. Correctness interpretation is shared/tested in
+            # quiz_status.interpret_answer_result (the proven "Correct!" signal,
+            # replacing this early solver's looser bare-"Correct" substring check).
             result = await page.evaluate("document.body.innerText")
-            if "Correct" in result:
+            if interpret_answer_result(result).correct:
                 print("  ✓ Correct!")
                 quiz_data["questions"][-1]["correct"] = True
             else:

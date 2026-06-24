@@ -7,6 +7,7 @@ from playwright.async_api import async_playwright
 
 from common import CDP_URL, DATA_DIR, lesson_url
 from quiz_heuristics import get_answer
+from quiz_status import interpret_answer_result
 from quizzes import CURRICULUM
 
 
@@ -205,10 +206,12 @@ async def solve_single_quiz(page, slug: str, title: str) -> dict:
             """)
             await asyncio.sleep(1.5)
 
-            # Check if answer was correct
+            # Check if answer was correct. Grader-verdict interpretation is shared,
+            # pure, and tested in quiz_status.interpret_answer_result — this adopts
+            # the primary runner's proven "Correct!" signal in place of this older
+            # runner's looser bare-"Correct" check (identical on real grader text).
             result_text = await page.evaluate("document.body.innerText")
-            # Look for "Correct!" or check for absence of "Incorrect"
-            correct = "Correct!" in result_text or ("Correct" in result_text and "Incorrect" not in result_text)
+            correct = interpret_answer_result(result_text).correct
 
             result["questions"].append({
                 "q": question[:150],

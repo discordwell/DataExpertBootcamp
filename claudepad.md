@@ -2,6 +2,32 @@
 
 ## Session Summaries (most recent first; keep 20)
 
+### 2026-06-23T22:00Z — Maintenance pass: unify the grader-verdict reader across all 3 runners
+Continued the "pure logic lives in tested modules / single source of truth"
+trajectory — the answer-correctness check after each "Check Answer" was the last
+duplicated, drifting, untested page-text interpreter. Suite grew 202 → 215 green,
+still browser-free.
+
+- **`quiz_status.interpret_answer_result(text)` (new):** returns an
+  `AnswerResult(correct, incorrect, complete)`. `correct` = explicit `Correct!`
+  or an `Output matches` SQL pass not contradicted by `does not match`;
+  `incorrect` = `Incorrect` / `does not match`; `complete` reuses `is_quiz_complete`.
+- **Killed 4 divergent inline copies.** The verdict check was inlined and had
+  **drifted**: `run_quizzes_v2`'s SQL site (`solve_quiz`) lacked its own MC site's
+  `does not match` guard, and `run_all_quizzes` / `quiz_solver` keyed off a looser
+  bare `Correct` rather than the primary (49/49) runner's proven `Correct!`. All
+  four now call the one helper.
+- **Verified safe before rewiring.** Exhaustive differential check over the
+  powerset of every marker fragment: identical to the v2 MC site on all three
+  fields; identical to the v2 SQL/`run_all`/`quiz_solver` sites on every string
+  the live grader actually emits (`Correct!` on a pass, `Incorrect` on a miss).
+  Diverges only on contrived inputs (a bare un-banged `Correct`, or both
+  `Output matches` and `does not match` at once) — where the new behavior is
+  strictly more correct. New `tests/test_quiz_status.py::TestInterpretAnswerResult`
+  (13 cases).
+- Also deduped `solve_quiz`'s SQL completion check (an inline JS copy of
+  `is_quiz_complete`'s markers + `Lesson Completed`) onto the shared helper.
+
 ### 2026-06-18T00:00Z — Maintenance pass: extract+test the Claude prompt builders
 Continued the "pure logic lives in tested modules / single source of truth"
 trajectory — the last untested pure logic in the v2 runner was the *prompt
@@ -128,8 +154,8 @@ flows (which can't be exercised offline).
   `ALL_QUIZZES`), `quiz_heuristics.py`, `quiz_sql.py`, `quiz_prompts.py` (Claude
   MC/SQL/text prompt *builders*), `quiz_parsing.py` (Claude MC/SQL/text response
   *parsers*), and `quiz_status.py` (page-text interpreters —
-  `parse_score`/`is_perfect_completion`/`classify_status`/`is_quiz_complete`) are all
-  browser-free and unit-tested. `run_quizzes_v2`'s `solve_*_with_claude` functions are
+  `parse_score`/`is_perfect_completion`/`classify_status`/`is_quiz_complete`/
+  `interpret_answer_result`) are all browser-free and unit-tested. `run_quizzes_v2`'s `solve_*_with_claude` functions are
   now thin: build prompt (`quiz_prompts`) → call CLI → parse (`quiz_parsing`). Every
   script imports config from `common` and the quiz list from `quizzes`.
 - **Auth model:** scripts reuse the user's logged-in Chrome session — cookies via
