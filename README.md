@@ -90,8 +90,10 @@ optional feedback/sample-data sections, and the 5+-option lettering fix), pin th
 `quiz_parsing` edge cases (multi-select de-duplication, markdown SQL fences, preamble
 stripping), pin the
 `quiz_status` interpreters (score parsing — including not mistaking a date like
-`26/12/2025` for a score — the perfect-skip rule, the status classifier, and the
-shared `interpret_answer_result` grader-verdict reader), and
+`26/12/2025` for a score — the perfect-skip rule, the status classifier, the
+shared `interpret_answer_result` grader-verdict reader, and its free-form
+`interpret_text_result` counterpart where an `Incorrect` vetoes a stray `good`),
+and
 guard the curriculum invariants (unique slugs, the flat list matching the week
 grouping).
 

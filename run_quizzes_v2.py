@@ -13,6 +13,7 @@ from quiz_sql import generate_sql
 from quiz_status import (
     classify_status,
     interpret_answer_result,
+    interpret_text_result,
     is_perfect_completion,
     is_quiz_complete,
     parse_score,
@@ -880,33 +881,33 @@ async def solve_quiz(page, slug: str, title: str) -> dict:
                     }""")
                     await asyncio.sleep(3)
 
-                    # Check result
+                    # Check result. Reading the grader's verdict for a free-form
+                    # text answer is pure logic shared via quiz_status — the
+                    # text-response counterpart to interpret_answer_result. It gives
+                    # an explicit "Incorrect"/"try again" priority over the looser
+                    # positive words ("good", "passed", ...), so feedback such as
+                    # "a good attempt, but incorrect" is no longer banked as a pass.
                     result_text = await page.evaluate("""() => {
                         const modal = document.querySelector('.modal-box') || document.body;
                         return modal.innerText;
                     }""")
 
-                    if "Correct" in result_text or "Well done" in result_text or "good" in result_text.lower():
+                    verdict = interpret_text_result(result_text)
+                    submitted = True  # Can't retry after Check Answer
+                    if verdict.correct:
                         print(f"         ✓ CORRECT!", flush=True)
                         solved = True
-                        submitted = True
-                    elif "Incorrect" in result_text or "incorrect" in result_text.lower() or "try again" in result_text.lower():
-                        # Extract feedback if available
+                    elif verdict.incorrect:
+                        # Extract feedback if available (kept for parity; the grader
+                        # is one-shot, so this only annotates the recorded failure).
                         feedback_match = re.search(r'(feedback|suggestion|hint)[:\s]*([^\n]+)', result_text, re.IGNORECASE)
                         if feedback_match:
                             feedback = feedback_match.group(2)
                         else:
                             feedback = "Your answer was marked incorrect. Please provide more detail or a different approach."
                         print(f"         ✗ Incorrect", flush=True)
-                        submitted = True  # Can't retry after Check Answer
                     else:
-                        # Check for any positive indicator
-                        if any(x in result_text.lower() for x in ['passed', 'success', 'accepted', 'great']):
-                            print(f"         ✓ Accepted!", flush=True)
-                            solved = True
-                        else:
-                            print(f"         Result unclear, assuming submitted", flush=True)
-                        submitted = True
+                        print(f"         Result unclear, assuming submitted", flush=True)
 
                 if solved:
                     result["questions"].append({"q": question[:150], "a": response[:200] if response else "", "type": "text", "correct": True})

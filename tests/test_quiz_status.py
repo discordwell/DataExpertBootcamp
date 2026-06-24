@@ -13,6 +13,7 @@ from quiz_status import (
     Score,
     classify_status,
     interpret_answer_result,
+    interpret_text_result,
     is_perfect_completion,
     is_quiz_complete,
     parse_score,
@@ -227,4 +228,62 @@ class TestInterpretAnswerResult:
 
     def test_pass_and_complete_together(self):
         r = interpret_answer_result("Correct! Quiz Complete")
+        assert r == AnswerResult(correct=True, incorrect=False, complete=True)
+
+
+# ---------------------------------------------------------------------------
+# interpret_text_result  (the free-form text-response counterpart)
+# ---------------------------------------------------------------------------
+
+class TestInterpretTextResult:
+    # --- Positive verdicts the text grader can emit. These must read as a pass,
+    # matching the old inline check's positive vocabulary.
+
+    @pytest.mark.parametrize("text", [
+        "Correct",
+        "Well done!",
+        "Your response passed.",
+        "Answer accepted — great work.",
+        "success",
+        "Good answer.",  # a bare "good" alone is still a pass (unchanged behavior)
+    ])
+    def test_positive_words_read_as_correct(self, text):
+        r = interpret_text_result(text)
+        assert (r.correct, r.incorrect) == (True, False)
+
+    # --- The bug this function fixes: a loose positive word sitting next to an
+    # explicit negative used to bank the answer as correct. The negative now wins.
+
+    def test_good_next_to_incorrect_is_a_miss(self):
+        r = interpret_text_result("A good attempt, but incorrect.")
+        assert (r.correct, r.incorrect) == (False, True)
+
+    def test_good_next_to_try_again_is_a_miss(self):
+        r = interpret_text_result("Good start, but try again with more detail.")
+        assert (r.correct, r.incorrect) == (False, True)
+
+    # --- Plain negatives.
+
+    @pytest.mark.parametrize("text", [
+        "Incorrect",
+        "Incorrect. The correct answer needs the partition clause.",  # lowercase "correct" is not a pass
+        "Please try again.",
+    ])
+    def test_negative_words_read_as_incorrect(self, text):
+        r = interpret_text_result(text)
+        assert (r.correct, r.incorrect) == (False, True)
+
+    # --- Neither verdict yet (still mid-submission / unrecognized).
+
+    def test_unclear_is_neither(self):
+        r = interpret_text_result("Submitting your response...")
+        assert r == AnswerResult(correct=False, incorrect=False, complete=False)
+
+    # --- complete mirrors is_quiz_complete's default markers, like the MC/SQL one.
+
+    def test_complete_marker(self):
+        assert interpret_text_result("Quiz Complete").complete is True
+
+    def test_pass_and_complete_together(self):
+        r = interpret_text_result("Well done! Quiz Complete")
         assert r == AnswerResult(correct=True, incorrect=False, complete=True)

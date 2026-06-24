@@ -150,6 +150,11 @@ runners:
   is an explicit `Correct!` or an `Output matches` SQL pass **not** contradicted
   by a `does not match`; `incorrect` is `Incorrect` / `does not match`; `complete`
   reuses `is_quiz_complete`'s default markers.
+- `interpret_text_result(text)` — the same verdict reader for the **free-form
+  text-response** path, which the fuzzier design/interview grader scores with a
+  wider positive vocabulary (`Well done` / `passed` / `accepted` / `great` / a
+  bare `good`). An explicit `Incorrect` / `try again` **vetoes** those looser
+  positives, so feedback like "a good attempt, but incorrect" reads as a miss.
 
 The `X/Y (Z%)` score regex was **inlined three times** inside `run_quizzes_v2`'s
 browser coroutines (the two already-completed checks in `solve_quiz` and the
@@ -167,6 +172,15 @@ original inline sites — identical on the v2 MC site and on every string the li
 grader actually emits, diverging only on contrived inputs (a bare un-banged
 `Correct`, or both `Output matches` and `does not match` at once) where the new
 behavior is strictly more correct.
+
+The v2 runner's **free-form text-response** path was the last verdict check still
+inlined (the MC and SQL paths already shared `interpret_answer_result`). Its
+positive test ran *before* the negative one, so a loose `good` in the grader's
+prose could mask an `Incorrect` and bank a wrong answer as a pass.
+`interpret_text_result` folds it into this module with the negative now vetoing
+the looser positives; a differential check confirmed it is identical to the old
+inline logic on every realistic grader string and changes behavior only on the
+positive-word-plus-`Incorrect` pages it was getting wrong.
 
 ## The scripts
 
@@ -224,10 +238,12 @@ logic and stay browser-free (no Playwright import required to run them):
   SQL-fence stripping, and preamble cleanup.
 - `tests/test_quiz_status.py` — pins the page-text interpreters: score parsing
   (including the date-isn't-a-score regression), the perfect-completion skip
-  rule, the status classifier's five outcomes, quiz-completion detection, and the
+  rule, the status classifier's five outcomes, quiz-completion detection, the
   `interpret_answer_result` verdict (the realistic `Correct!` / `Incorrect`
   grader strings, the `does not match` guard, and that a bare un-banged `Correct`
-  is not a pass).
+  is not a pass), and the `interpret_text_result` free-form verdict (the wider
+  positive vocabulary, and that an `Incorrect` / `try again` vetoes a stray
+  `good`).
 - `tests/test_quizzes.py` — guards the curriculum invariants: eight weeks, fifty
   quizzes, unique slugs, and a flat `ALL_QUIZZES` that matches the week grouping.
 - `tests/test_common.py` — verifies cookie conversion, session setup, and the

@@ -147,3 +147,42 @@ def interpret_answer_result(text: str) -> AnswerResult:
     correct = "Correct!" in text or ("Output matches" in text and "does not match" not in text)
     incorrect = "Incorrect" in text or "does not match" in text
     return AnswerResult(correct=correct, incorrect=incorrect, complete=is_quiz_complete(text))
+
+
+def interpret_text_result(text: str) -> AnswerResult:
+    """Interpret a post-"Check Answer" page for a *free-form text* answer.
+
+    The free-form design/interview questions are graded with fuzzier language than
+    the crisp multiple-choice / SQL grader that :func:`interpret_answer_result`
+    reads, so this is its text-response counterpart. The positive vocabulary is
+    wider ("Well done", "passed", "accepted", "great", a bare "good", ...) and,
+    crucially, an explicit negative (``"Incorrect"`` / ``"try again"``) *vetoes*
+    those looser positives — so feedback like "a good attempt, but incorrect" reads
+    as a miss, not a pass.
+
+    - ``incorrect``: an explicit ``"Incorrect"`` / ``"try again"`` (case-insensitive).
+    - ``correct``: a positive signal — ``"Correct"`` or ``"Well done"`` (case
+      sensitive, so the lowercase "correct" inside "Incorrect" is *not* one), or any
+      of ``good`` / ``passed`` / ``success`` / ``accepted`` / ``great`` — that is
+      *not* contradicted by an ``incorrect`` signal.
+    - ``complete``: the quiz has finished (``is_quiz_complete``'s default markers).
+
+    This replaces an inline check in ``run_quizzes_v2``'s text-response path whose
+    positive test ran *before* the negative one, so a loose ``"good"`` in the
+    grader's prose could mask an ``"Incorrect"`` and bank a wrong answer as right.
+    On the strings the grader actually emits it agrees with that old inline check;
+    it diverges only by no longer misreading a positive-word-plus-``Incorrect``
+    page as a pass (the bug it fixes).
+    """
+    lowered = text.lower()
+    incorrect = "incorrect" in lowered or "try again" in lowered
+    positive = (
+        "Correct" in text
+        or "Well done" in text
+        or any(word in lowered for word in ("good", "passed", "success", "accepted", "great"))
+    )
+    return AnswerResult(
+        correct=positive and not incorrect,
+        incorrect=incorrect,
+        complete=is_quiz_complete(text),
+    )

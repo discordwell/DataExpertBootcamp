@@ -2,6 +2,30 @@
 
 ## Session Summaries (most recent first; keep 20)
 
+### 2026-06-24T00:00Z — Maintenance pass: extract+test the free-form text-response verdict
+Closed out the "every grader-verdict check lives in one tested place" goal. The
+prior pass unified the MC and SQL verdict checks onto
+`quiz_status.interpret_answer_result`, but the v2 runner's **free-form
+text-response** path still read the verdict with its own inline, untested string
+matching — and that copy had a real **precedence bug**. Suite grew 215 → 229
+green, still browser-free.
+
+- **`quiz_status.interpret_text_result(text)` (new):** the text-response
+  counterpart to `interpret_answer_result`. The fuzzier design/interview grader
+  uses a wider positive vocabulary (`Well done` / `passed` / `accepted` / `great`
+  / a bare `good`); an explicit `Incorrect` / `try again` now **vetoes** those
+  looser positives. Returns the same `AnswerResult(correct, incorrect, complete)`.
+- **Bug fixed — loose positive masked an explicit miss.** The old inline branch
+  tested the positives (incl. a bare `good`) *before* the negative, so grader
+  feedback like "a good attempt, but **incorrect**" was banked as a **pass**
+  (`solved=True`, the wrong answer recorded correct). Negative now wins.
+- **Verified safe before rewiring.** A differential check against the exact
+  pre-fix inline logic over the realistic grader strings is identical on every
+  one; it diverges *only* on the positive-word-plus-`Incorrect` pages it was
+  getting wrong. New `tests/test_quiz_status.py::TestInterpretTextResult` (14 cases).
+- Rewired v2's text path to the helper; `re`-based feedback extraction kept inline
+  (it only annotates the recorded failure — the grader is one-shot).
+
 ### 2026-06-23T22:00Z — Maintenance pass: unify the grader-verdict reader across all 3 runners
 Continued the "pure logic lives in tested modules / single source of truth"
 trajectory — the answer-correctness check after each "Check Answer" was the last
@@ -155,7 +179,8 @@ flows (which can't be exercised offline).
   MC/SQL/text prompt *builders*), `quiz_parsing.py` (Claude MC/SQL/text response
   *parsers*), and `quiz_status.py` (page-text interpreters —
   `parse_score`/`is_perfect_completion`/`classify_status`/`is_quiz_complete`/
-  `interpret_answer_result`) are all browser-free and unit-tested. `run_quizzes_v2`'s `solve_*_with_claude` functions are
+  `interpret_answer_result` for MC+SQL / `interpret_text_result` for free-form
+  text) are all browser-free and unit-tested. `run_quizzes_v2`'s `solve_*_with_claude` functions are
   now thin: build prompt (`quiz_prompts`) → call CLI → parse (`quiz_parsing`). Every
   script imports config from `common` and the quiz list from `quizzes`.
 - **Auth model:** scripts reuse the user's logged-in Chrome session — cookies via
