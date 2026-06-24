@@ -91,9 +91,11 @@ optional feedback/sample-data sections, and the 5+-option lettering fix), pin th
 stripping), pin the
 `quiz_status` interpreters (score parsing — including not mistaking a date like
 `26/12/2025` for a score — the perfect-skip rule, the status classifier, the
-shared `interpret_answer_result` grader-verdict reader, and its free-form
-`interpret_text_result` counterpart where an `Incorrect` vetoes a stray `good`),
-and
+shared `interpret_answer_result` grader-verdict reader, its free-form
+`interpret_text_result` counterpart where an `Incorrect` vetoes a stray `good`,
+and the `Question N of M` `parse_question_progress` reader the runners share),
+pin `scraper.extract_challenge_links` (the link pattern and its order-preserving
+de-duplication), and
 guard the curriculum invariants (unique slugs, the flat list matching the week
 grouping).
 

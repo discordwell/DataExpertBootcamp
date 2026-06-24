@@ -16,6 +16,7 @@ from quiz_status import (
     interpret_text_result,
     is_perfect_completion,
     is_quiz_complete,
+    parse_question_progress,
     parse_score,
 )
 from quizzes import ALL_QUIZZES, CURRICULUM
@@ -255,9 +256,10 @@ async def solve_quiz(page, slug: str, title: str) -> dict:
                 print("    Quiz Complete!", flush=True)
                 break
 
-            # Check for Question X of Y
-            q_match = re.search(r'Question (\d+) of (\d+)', full_text)
-            if not q_match:
+            # Check for Question X of Y. Parsing the "Question N of M" position is
+            # shared, pure, and tested in quiz_status.parse_question_progress.
+            progress = parse_question_progress(full_text)
+            if progress is None:
                 print(f"    Q{q_num+1}: No question found", flush=True)
                 if q_num == 0:
                     print(f"    Page text preview: {full_text[:300]}", flush=True)
@@ -434,11 +436,10 @@ async def solve_quiz(page, slug: str, title: str) -> dict:
                 result["completed"] = True
                 break
 
-            # Get current question number from page for stuck detection
-            current_q_num = None
-            q_num_match = re.search(r'Question (\d+) of (\d+)', full_text)
-            if q_num_match:
-                current_q_num = int(q_num_match.group(1))
+            # Get current question number from page for stuck detection. `progress`
+            # was parsed from this same `full_text` above (and is non-None past the
+            # break), so reuse it instead of re-running the regex.
+            current_q_num = progress.current
 
             # Stuck detection - use question NUMBER not text (text can be same for different Qs)
             if current_q_num is not None and current_q_num == last_q_num:
@@ -1066,10 +1067,9 @@ async def solve_quiz(page, slug: str, title: str) -> dict:
                     print("    Quiz Complete!", flush=True)
                     break
                 # Check if question changed by looking for different question number
-                q_match = re.search(r'Question (\d+) of (\d+)', new_text)
-                if q_match:
-                    new_q_num = int(q_match.group(1))
-                    if new_q_num > q_num + 1:  # Question number increased
+                new_progress = parse_question_progress(new_text)
+                if new_progress is not None:
+                    if new_progress.current > q_num + 1:  # Question number increased
                         break
                 await asyncio.sleep(1)
 

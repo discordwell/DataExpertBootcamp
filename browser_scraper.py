@@ -2,7 +2,6 @@
 import asyncio
 import nodriver as uc
 import json
-import re
 
 from common import BASE_URL, DATA_DIR
 

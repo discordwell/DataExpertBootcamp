@@ -136,6 +136,11 @@ runners:
 - `parse_score(text)` — pulls the `X/Y (Z%)` score out of the page as a `Score`
   named tuple. The pattern **requires** the trailing `(N%)`, which is what stops
   it from mistaking a calendar date like `26/12/2025` for a `got/total` fraction.
+- `parse_question_progress(text)` — pulls the `Question N of M` position out of
+  the quiz modal as a `QuestionProgress(current, total)` named tuple (or `None`
+  when no question is on screen). This `Question N of M` regex was inlined at four
+  call sites across the runners (three in `run_quizzes_v2`, one in `quiz_solver`);
+  centralizing it keeps the one pattern in a single tested place.
 - `is_perfect_completion(text)` — the canonical "this quiz is already perfect,
   skip it" rule: a 100%-and-all-correct score, or a bare `(100%)` marker when no
   fraction is present.
@@ -241,11 +246,16 @@ logic and stay browser-free (no Playwright import required to run them):
   rule, the status classifier's five outcomes, quiz-completion detection, the
   `interpret_answer_result` verdict (the realistic `Correct!` / `Incorrect`
   grader strings, the `does not match` guard, and that a bare un-banged `Correct`
-  is not a pass), and the `interpret_text_result` free-form verdict (the wider
+  is not a pass), the `interpret_text_result` free-form verdict (the wider
   positive vocabulary, and that an `Incorrect` / `try again` vetoes a stray
-  `good`).
+  `good`), and `parse_question_progress` (including a differential check against
+  the exact inline `Question N of M` regex the runners used before extraction).
 - `tests/test_quizzes.py` — guards the curriculum invariants: eight weeks, fifty
   quizzes, unique slugs, and a flat `ALL_QUIZZES` that matches the week grouping.
 - `tests/test_common.py` — verifies cookie conversion, session setup, and the
   `CDP_URL`/`lesson_url` helpers by monkeypatching `browser_cookie3` (no real browser
   or cookies needed).
+- `tests/test_scraper.py` — pins `scraper.extract_challenge_links`: the
+  challenge/quiz/lesson href pattern, that only root-relative paths match, and
+  the order-preserving de-duplication (replacing the old non-deterministic
+  `list(set(...))`).

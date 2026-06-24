@@ -1,7 +1,6 @@
 """Scrape the actual lesson content from DataExpert bootcamp."""
 import asyncio
 import json
-import re
 from playwright.async_api import async_playwright
 
 from common import BASE_URL, DATA_DIR, get_cookies_for_playwright

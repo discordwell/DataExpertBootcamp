@@ -10,12 +10,14 @@ import pytest
 
 from quiz_status import (
     AnswerResult,
+    QuestionProgress,
     Score,
     classify_status,
     interpret_answer_result,
     interpret_text_result,
     is_perfect_completion,
     is_quiz_complete,
+    parse_question_progress,
     parse_score,
 )
 
@@ -287,3 +289,64 @@ class TestInterpretTextResult:
     def test_pass_and_complete_together(self):
         r = interpret_text_result("Well done! Quiz Complete")
         assert r == AnswerResult(correct=True, incorrect=False, complete=True)
+
+
+# ---------------------------------------------------------------------------
+# parse_question_progress
+# ---------------------------------------------------------------------------
+
+class TestParseQuestionProgress:
+    def test_basic(self):
+        assert parse_question_progress("Question 1 of 6") == QuestionProgress(1, 6)
+
+    def test_multi_digit(self):
+        assert parse_question_progress("Question 12 of 30") == QuestionProgress(12, 30)
+
+    def test_embedded_in_surrounding_text(self):
+        text = "25% Complete\nQuestion 3 of 4\nSingle Choice\nWhat is ...?"
+        assert parse_question_progress(text) == QuestionProgress(3, 4)
+
+    def test_returns_first_match(self):
+        # The live page shows one marker, but pin first-match behavior regardless.
+        assert parse_question_progress("Question 2 of 5 ... Question 9 of 9") == QuestionProgress(2, 5)
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "",
+            "Start Quiz to begin",
+            "Quiz Complete! You passed",
+            "Question of",            # no numbers
+            "Question 3 of",          # missing total
+            "question 3 of 6",        # lowercase 'q' does not match
+        ],
+    )
+    def test_no_marker_returns_none(self, text):
+        assert parse_question_progress(text) is None
+
+    def test_fields_are_ints(self):
+        progress = parse_question_progress("Question 4 of 8")
+        assert (progress.current, progress.total) == (4, 8)
+        assert isinstance(progress.current, int) and isinstance(progress.total, int)
+
+    def test_matches_legacy_inline_regex(self):
+        # Differential check: the helper must agree with the exact regex the four
+        # runner call sites used inline before extraction.
+        import re
+
+        legacy = re.compile(r'Question (\d+) of (\d+)')
+        samples = [
+            "",
+            "Question 1 of 6",
+            "Question 12 of 30",
+            "25% Complete\nQuestion 3 of 4\nSingle Choice",
+            "Question 3 of",
+            "no marker here",
+            "Question 2 of 5 ... Question 9 of 9",
+            "Quiz Complete",
+            "QUESTION 1 OF 2",
+        ]
+        for text in samples:
+            m = legacy.search(text)
+            expected = QuestionProgress(int(m.group(1)), int(m.group(2))) if m else None
+            assert parse_question_progress(text) == expected, text

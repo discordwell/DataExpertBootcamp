@@ -29,6 +29,11 @@ SCORE_RE = re.compile(r'(\d+)/(\d+)\s*\((\d+)%\)')
 # Bare-percentage fallback, e.g. a "(100%)" with no "got/total" fraction.
 PERCENT_RE = re.compile(r'\((\d+)%\)')
 
+# Matches the "Question N of M" position label the quiz modal shows above each
+# question. The runners use it both to tell that a question is on screen and to
+# read the current/total counts (for stuck-detection and next-question waits).
+QUESTION_RE = re.compile(r'Question (\d+) of (\d+)')
+
 
 class Score(NamedTuple):
     """A parsed quiz score: ``got`` correct out of ``total``, at ``pct`` percent."""
@@ -56,6 +61,28 @@ def parse_score(text: str) -> Optional[Score]:
     if not m:
         return None
     return Score(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+
+
+class QuestionProgress(NamedTuple):
+    """The quiz modal's "Question N of M" position: question ``current`` of ``total``."""
+
+    current: int
+    total: int
+
+
+def parse_question_progress(text: str) -> Optional[QuestionProgress]:
+    """Extract the "Question N of M" position from quiz page text, or ``None``.
+
+    Returns ``None`` when the marker is absent, which the runners treat as "no
+    question is on screen" — the quiz either hasn't started yet or has finished.
+    This regex used to be inlined at four call sites across the runners (three in
+    ``run_quizzes_v2``, one in ``quiz_solver``); centralizing it here keeps the
+    single ``Question N of M`` pattern in one tested place.
+    """
+    m = QUESTION_RE.search(text)
+    if not m:
+        return None
+    return QuestionProgress(int(m.group(1)), int(m.group(2)))
 
 
 def is_perfect_completion(text: str) -> bool:

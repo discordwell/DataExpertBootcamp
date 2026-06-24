@@ -1,7 +1,6 @@
 """Scrape quiz pages and extract questions."""
 import asyncio
 import json
-import re
 from playwright.async_api import async_playwright
 
 from common import DATA_DIR, get_cookies_for_playwright, lesson_url

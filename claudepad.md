@@ -2,6 +2,32 @@
 
 ## Session Summaries (most recent first; keep 20)
 
+### 2026-06-24T12:00Z — Maintenance pass: extract+test the "Question N of M" reader; fix dead scraper helper
+Continued the "pure logic lives in one tested place / single source of truth"
+trajectory and cleaned up two smaller defects. Suite grew 229 → 248 green, still
+browser-free.
+
+- **`quiz_status.parse_question_progress(text)` (new):** the last duplicated
+  page-text regex. `re.search(r'Question (\d+) of (\d+)', text)` was inlined at
+  **four** Python call sites — `run_quizzes_v2` (×3: question-present check,
+  stuck-detection, next-question wait) and `quiz_solver` (×1). Now a pure helper
+  returning a `QuestionProgress(current, total)` named tuple (or `None`).
+  Differential-tested against the exact inline regex; rewired all four sites. The
+  v2 stuck-detection site now **reuses** the `progress` already parsed from the
+  same `full_text` instead of re-running the regex (one fewer search; verified
+  `full_text` is unchanged and `progress` is non-None past the earlier break).
+  Also dropped `quiz_solver`'s now-unused `import re`.
+- **Bug fix — `scraper.extract_challenge_links` was dead + non-deterministic.**
+  The README advertises scraper.py's "challenge-link extraction", but the helper
+  was **never called** and returned `list(set(...))` (non-deterministic order).
+  Now order-preserving de-dup, wired into `test_auth` so the advertised feature
+  actually runs and prints the found links. New `tests/test_scraper.py` (7 cases:
+  pattern match, root-relative-only, case-insensitive keyword, stable dedup order).
+- **Dead-import cleanup:** removed unused `import re` from `scrape_lessons.py`,
+  `scrape_quiz.py`, `browser_scraper.py` (none referenced `re`).
+- New `tests/test_quiz_status.py::TestParseQuestionProgress` (12 cases incl. the
+  legacy-regex differential). Reviewed the diff with a sub-agent: no regressions.
+
 ### 2026-06-24T00:00Z — Maintenance pass: extract+test the free-form text-response verdict
 Closed out the "every grader-verdict check lives in one tested place" goal. The
 prior pass unified the MC and SQL verdict checks onto
@@ -178,9 +204,10 @@ flows (which can't be exercised offline).
   `ALL_QUIZZES`), `quiz_heuristics.py`, `quiz_sql.py`, `quiz_prompts.py` (Claude
   MC/SQL/text prompt *builders*), `quiz_parsing.py` (Claude MC/SQL/text response
   *parsers*), and `quiz_status.py` (page-text interpreters —
-  `parse_score`/`is_perfect_completion`/`classify_status`/`is_quiz_complete`/
-  `interpret_answer_result` for MC+SQL / `interpret_text_result` for free-form
-  text) are all browser-free and unit-tested. `run_quizzes_v2`'s `solve_*_with_claude` functions are
+  `parse_score`/`parse_question_progress`/`is_perfect_completion`/
+  `classify_status`/`is_quiz_complete`/`interpret_answer_result` for MC+SQL /
+  `interpret_text_result` for free-form text) are all browser-free and
+  unit-tested. `run_quizzes_v2`'s `solve_*_with_claude` functions are
   now thin: build prompt (`quiz_prompts`) → call CLI → parse (`quiz_parsing`). Every
   script imports config from `common` and the quiz list from `quizzes`.
 - **Auth model:** scripts reuse the user's logged-in Chrome session — cookies via

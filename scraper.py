@@ -26,15 +26,34 @@ def test_auth():
         f.write(response.text)
     print(f"Saved response to {DATA_DIR / 'curriculum_page.html'}")
 
+    # Pull the challenge/quiz/lesson links out of the page and report them.
+    links = extract_challenge_links(response.text)
+    print(f"Found {len(links)} challenge/quiz/lesson links")
+    for href in links[:20]:
+        print(f"  {href}")
+
     return True
 
 
-def extract_challenge_links(html_content):
-    """Extract challenge/quiz links from page content."""
-    # Look for links to quizzes or challenges
+def extract_challenge_links(html_content: str) -> list:
+    """Extract distinct challenge/quiz/lesson hrefs from page HTML.
+
+    Returns the matching ``/...`` paths in first-seen order, de-duplicated. The
+    pattern matches any href whose path contains ``quiz``, ``challenge``, or
+    ``lesson`` (case-insensitive) — how the curriculum page links to each item.
+
+    De-duplication preserves order (rather than going through a ``set``) so the
+    output is deterministic across runs.
+    """
     quiz_pattern = r'href="(/[^"]*(?:quiz|challenge|lesson)[^"]*)"'
     matches = re.findall(quiz_pattern, html_content, re.IGNORECASE)
-    return list(set(matches))
+    seen = set()
+    unique = []
+    for href in matches:
+        if href not in seen:
+            seen.add(href)
+            unique.append(href)
+    return unique
 
 
 if __name__ == "__main__":

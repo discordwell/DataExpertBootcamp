@@ -1,13 +1,12 @@
 """DataExpert Bootcamp Quiz Solver - Connects to existing Chrome with remote debugging."""
 import asyncio
 import json
-import re
 from datetime import datetime
 from playwright.async_api import async_playwright
 
 from common import CDP_PORT, CDP_URL, DATA_DIR, lesson_url
 from quiz_heuristics import get_answer
-from quiz_status import interpret_answer_result, is_quiz_complete
+from quiz_status import interpret_answer_result, is_quiz_complete, parse_question_progress
 
 
 async def solve_quiz(slug: str, module_name: str = ""):
@@ -100,16 +99,17 @@ async def solve_quiz(slug: str, module_name: str = ""):
                 quiz_data["completed"] = True
                 break
 
-            # Find question info
-            q_match = re.search(r'Question (\d+) of (\d+)', page_text)
-            if not q_match:
+            # Find question info. The "Question N of M" parse is shared, pure, and
+            # tested in quiz_status.parse_question_progress.
+            progress = parse_question_progress(page_text)
+            if progress is None:
                 if "passed" in page_text.lower() or "complete" in page_text.lower():
                     quiz_data["completed"] = True
                 print("Quiz complete or could not find question")
                 break
 
-            current_q = int(q_match.group(1))
-            total_q = int(q_match.group(2))
+            current_q = progress.current
+            total_q = progress.total
 
             # Parse question and options
             lines = [l.strip() for l in page_text.split('\n') if l.strip()]
