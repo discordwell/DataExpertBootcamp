@@ -2,6 +2,38 @@
 
 ## Session Summaries (most recent first; keep 20)
 
+### 2026-07-08T00:00Z — Maintenance pass: fix the text-answer scoring bug, extract+test summarize_quiz
+First landed the prior pass's WIP (the two v2 bug fixes + `parse_mc_question` +
+CI) as commit `a3ac476`, then fixed a fresh bug and centralized the last
+duplicated decision. Suite grew 275 → 285 green, still browser-free.
+
+- **Bug fixed — correct free-form text answers were never scored.** In
+  `run_quizzes_v2.solve_quiz`, the SQL and MC paths do `result["score"] += 1`
+  on a correct answer, but the **text-response** path only set `solved = True`
+  and appended the question with `correct: True` — it never bumped `score`.
+  Because the text question still counts in `total = len(questions)`, a
+  correctly-answered text question **dragged the percentage down** (numerator
+  short, denominator full), understating both the printed `pct` and the
+  `pct >= 70` pass gate — so a text-heavy quiz answered perfectly could read as
+  not-PASSED, and `main()`'s grand total was undercounted too. One-line fix:
+  count it like the other two paths. (Root note: the three paths record
+  correctness inconsistently — SQL `solved`, text `correct`, MC nothing — so the
+  parallel `score` counter, not the questions list, is the real source of truth;
+  deriving score from the list would need all three unified first, a riskier
+  browser-code change, so the surgical increment was the safe fix.)
+- **`quiz_status.summarize_quiz(score, num_questions)` (new):** the end-of-quiz
+  tally was a **verbatim-duplicated** block in both runners —
+  `pct = score/total*100`, `status = "PASSED" if pct >= 70 else f"{pct:.0f}%"`,
+  `if pct >= 70: completed = True`. Now a pure `QuizSummary(pct, status, passed)`
+  with a named `PASS_THRESHOLD_PCT = 70`; both runners call it, printed output
+  byte-identical. Divide-by-zero-safe for the empty case. New
+  `TestSummarizeQuiz` (10 cases incl. the 70% boundary and a differential check
+  against the exact inline `>= 70` / `f"{pct:.0f}%"` logic it replaces).
+- Docs updated (README testing line + ARCHITECTURE quiz_status + testing
+  sections). Known-minor, left for a later pass: v2's text path has a dead
+  `feedback`/retry branch (the grader is one-shot, so the recomputed feedback is
+  never re-submitted) — harmless dead code, not touched to keep this change focused.
+
 ### 2026-07-02T21:00Z — Maintenance pass: two v2-runner bug fixes, quiz_solver's parser extracted, CI added
 Suite grew 248 → 275 green, still browser-free — and now enforced by CI.
 

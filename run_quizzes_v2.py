@@ -19,6 +19,7 @@ from quiz_status import (
     parse_question_progress,
     parse_score,
     question_advanced,
+    summarize_quiz,
 )
 from quizzes import ALL_QUIZZES, CURRICULUM
 
@@ -900,6 +901,13 @@ async def solve_quiz(page, slug: str, title: str) -> dict:
                     submitted = True  # Can't retry after Check Answer
                     if verdict.correct:
                         print(f"         ✓ CORRECT!", flush=True)
+                        # Count the correct answer toward the score, like the SQL
+                        # and MC paths do. This was missing, so a correctly graded
+                        # text answer was recorded `correct: True` in the question
+                        # list but never added to `result["score"]` — understating
+                        # the quiz's percentage (and its `pct >= 70` pass gate),
+                        # since the text question still counts in the denominator.
+                        result["score"] += 1
                         solved = True
                     elif verdict.incorrect:
                         # Extract feedback if available (kept for parity; the grader
@@ -1081,13 +1089,13 @@ async def solve_quiz(page, slug: str, title: str) -> dict:
             if result.get("completed"):
                 break
 
-        # Summary
+        # Summary. The pass threshold / percentage label is pure logic shared
+        # with run_all_quizzes via quiz_status.summarize_quiz (tested).
         total = len(result["questions"])
         if total > 0:
-            pct = (result["score"] / total) * 100
-            status = "PASSED" if pct >= 70 else f"{pct:.0f}%"
-            print(f"    → {result['score']}/{total} ({status})", flush=True)
-            if pct >= 70:
+            summary = summarize_quiz(result["score"], total)
+            print(f"    → {result['score']}/{total} ({summary.status})", flush=True)
+            if summary.passed:
                 result["completed"] = True
 
     except Exception as e:

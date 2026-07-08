@@ -300,3 +300,38 @@ def interpret_text_result(text: str) -> AnswerResult:
         incorrect=incorrect,
         complete=is_quiz_complete(text),
     )
+
+
+# A quiz counts as passed at 70% correct — the threshold both runners use both to
+# mark a quiz "completed" and to label its one-line end-of-quiz summary.
+PASS_THRESHOLD_PCT = 70
+
+
+class QuizSummary(NamedTuple):
+    """The end-of-quiz summary both runners print from the final tally: the
+    percent correct, the short status label (``"PASSED"`` or e.g. ``"60%"``), and
+    whether the pass threshold was met."""
+
+    pct: float
+    status: str
+    passed: bool
+
+
+def summarize_quiz(score: int, num_questions: int) -> QuizSummary:
+    """Summarize a finished quiz run from its score and answered-question count.
+
+    Returns the percent correct, the short status label the runners print
+    (``"PASSED"`` at or above the 70% threshold, otherwise the rounded percentage
+    like ``"60%"``), and whether the quiz passed. ``num_questions == 0`` yields
+    0% and not-passed — the runners only summarize once at least one question was
+    answered, but the helper stays safe for the empty case rather than dividing by
+    zero.
+
+    Both runners computed this inline with a verbatim-duplicated ``>= 70``
+    threshold and ``f"{pct:.0f}%"`` label; centralizing it keeps the single pass
+    rule in one tested place (like the rest of this module).
+    """
+    pct = (score / num_questions * 100) if num_questions else 0.0
+    passed = pct >= PASS_THRESHOLD_PCT
+    status = "PASSED" if passed else f"{pct:.0f}%"
+    return QuizSummary(pct, status, passed)

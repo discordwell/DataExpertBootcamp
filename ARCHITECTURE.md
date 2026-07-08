@@ -186,6 +186,18 @@ runners:
   wider positive vocabulary (`Well done` / `passed` / `accepted` / `great` / a
   bare `good`). An explicit `Incorrect` / `try again` **vetoes** those looser
   positives, so feedback like "a good attempt, but incorrect" reads as a miss.
+- `summarize_quiz(score, num_questions)` — the end-of-quiz tally both runners
+  print, as a `QuizSummary(pct, status, passed)`: the percent correct, the short
+  label (`PASSED` at/above the 70% `PASS_THRESHOLD_PCT`, else the rounded
+  percentage like `60%`), and whether the pass threshold was met. The `>= 70`
+  gate plus `f"{pct:.0f}%"` label were a **verbatim-duplicated** block in
+  `run_quizzes_v2` and `run_all_quizzes`; centralizing keeps the single pass rule
+  in one tested place. (The consolidation also surfaced a real scoring bug in the
+  v2 runner — its **free-form text-response** path recorded a correct answer in
+  the question list but never added it to `score`, so the text question inflated
+  the denominator without the numerator, understating the percentage and its
+  `pct >= 70` pass gate; the SQL and MC paths already counted, and the text path
+  now matches them.)
 
 The `X/Y (Z%)` score regex was **inlined three times** inside `run_quizzes_v2`'s
 browser coroutines (the two already-completed checks in `solve_quiz` and the
@@ -278,9 +290,12 @@ logic and stay browser-free (no Playwright import required to run them):
   positive vocabulary, and that an `Incorrect` / `try again` vetoes a stray
   `good`), `parse_question_progress` (including a differential check against
   the exact inline `Question N of M` regex the runners used before extraction),
-  `question_advanced` (including the loop-counter off-by-one it replaces), and
+  `question_advanced` (including the loop-counter off-by-one it replaces),
   `parse_mc_question` (both modal layouts, the badge-is-not-the-question and
-  question-is-not-an-option fixes, the hint/nav exclusions, and the option cap).
+  question-is-not-an-option fixes, the hint/nav exclusions, and the option cap),
+  and `summarize_quiz` (the 70% pass boundary, the rounded-percent label, the
+  divide-by-zero-safe empty case, and a differential check against the exact
+  inline `pct >= 70` / `f"{pct:.0f}%"` logic both runners used before extraction).
 - `tests/test_quizzes.py` — guards the curriculum invariants: eight weeks, fifty
   quizzes, unique slugs, and a flat `ALL_QUIZZES` that matches the week grouping.
 - `tests/test_common.py` — verifies cookie conversion, session setup, and the

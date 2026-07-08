@@ -95,9 +95,10 @@ stripping, and the `text_response_from_cli` failure contract — a failed CLI ca
 shared `interpret_answer_result` grader-verdict reader, its free-form
 `interpret_text_result` counterpart where an `Incorrect` vetoes a stray `good`,
 the `Question N of M` `parse_question_progress` reader the runners share, the
-`question_advanced` next-question check, and the text-based `parse_mc_question`
+`question_advanced` next-question check, the text-based `parse_mc_question`
 question/option reader — including that the `Single Choice` badge is never taken
-as the question text),
+as the question text — and the shared `summarize_quiz` pass/percentage rule at
+the 70% boundary),
 pin `scraper.extract_challenge_links` (the link pattern and its order-preserving
 de-duplication), and
 guard the curriculum invariants (unique slugs, the flat list matching the week

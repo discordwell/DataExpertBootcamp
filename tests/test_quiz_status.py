@@ -9,9 +9,11 @@ a calendar date like ``26/12/2025`` for a score — unit-testable with no browse
 import pytest
 
 from quiz_status import (
+    PASS_THRESHOLD_PCT,
     AnswerResult,
     MCQuestion,
     QuestionProgress,
+    QuizSummary,
     Score,
     classify_status,
     interpret_answer_result,
@@ -22,6 +24,7 @@ from quiz_status import (
     parse_question_progress,
     parse_score,
     question_advanced,
+    summarize_quiz,
 )
 
 
@@ -516,3 +519,72 @@ class TestParseMCQuestion:
             "The real question is way down here?\nSingle Choice\nan option line here\nShow Hint"
         )
         assert parse_mc_question(text) is None
+
+
+# ---------------------------------------------------------------------------
+# summarize_quiz
+# ---------------------------------------------------------------------------
+
+class TestSummarizeQuiz:
+    def test_threshold_is_seventy_percent(self):
+        # Documents the shared pass rule both runners key off.
+        assert PASS_THRESHOLD_PCT == 70
+
+    def test_clear_pass(self):
+        s = summarize_quiz(8, 10)
+        assert s == QuizSummary(80.0, "PASSED", True)
+
+    def test_clear_fail_uses_rounded_percent_label(self):
+        s = summarize_quiz(6, 10)
+        assert s == QuizSummary(60.0, "60%", False)
+
+    def test_perfect(self):
+        s = summarize_quiz(5, 5)
+        assert s.passed is True
+        assert s.status == "PASSED"
+        assert s.pct == 100.0
+
+    def test_zero_correct(self):
+        s = summarize_quiz(0, 5)
+        assert s == QuizSummary(0.0, "0%", False)
+
+    def test_exact_threshold_passes(self):
+        # 7/10 sits exactly on the 70% line and must count as a pass (the gate is
+        # `>= 70`, inclusive), matching the runners' inline check.
+        assert summarize_quiz(7, 10).passed is True
+
+    def test_label_rounds_like_the_runner(self):
+        # The label uses `f"{pct:.0f}%"`, so 2/3 = 66.66% rounds to "67%".
+        assert summarize_quiz(2, 3).status == "67%"
+        assert summarize_quiz(1, 3).status == "33%"
+
+    def test_empty_quiz_is_safe(self):
+        # The runners guard with `if total > 0`, but the helper must not divide by
+        # zero if handed an empty tally.
+        assert summarize_quiz(0, 0) == QuizSummary(0.0, "0%", False)
+
+    def test_all_correct_scores_full_marks(self):
+        # Regression context for the text-answer scoring fix: once every correct
+        # answer (including free-form text) is counted in `score`, a fully-correct
+        # quiz summarizes as 100% PASSED — before the fix a correct text answer
+        # was left out of `score` but still counted in the denominator, dragging
+        # the percentage (and the pass gate) below the true value.
+        assert summarize_quiz(4, 4) == QuizSummary(100.0, "PASSED", True)
+
+    def test_matches_the_inline_logic_it_replaces(self):
+        # Differential check against the exact expression both runners computed
+        # inline before extraction:
+        #     pct = (score / total) * 100
+        #     status = "PASSED" if pct >= 70 else f"{pct:.0f}%"
+        #     passed = pct >= 70
+        # This pins the boundary behavior (including any float rounding) to the
+        # original, so the extraction cannot silently change a pass/fail verdict.
+        cases = [
+            (0, 1), (1, 1), (1, 3), (2, 3), (3, 4), (5, 7),
+            (6, 10), (7, 10), (8, 10), (13, 20), (14, 20),
+            (69, 100), (70, 100), (71, 100), (1, 8), (49, 50),
+        ]
+        for score, total in cases:
+            pct = (score / total) * 100
+            expected = QuizSummary(pct, "PASSED" if pct >= 70 else f"{pct:.0f}%", pct >= 70)
+            assert summarize_quiz(score, total) == expected, (score, total)

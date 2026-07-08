@@ -7,7 +7,7 @@ from playwright.async_api import async_playwright
 
 from common import CDP_URL, DATA_DIR, lesson_url
 from quiz_heuristics import get_answer
-from quiz_status import interpret_answer_result
+from quiz_status import interpret_answer_result, summarize_quiz
 from quizzes import CURRICULUM
 
 
@@ -238,13 +238,13 @@ async def solve_single_quiz(page, slug: str, title: str) -> dict:
             """)
             await asyncio.sleep(1)
 
-        # Print quiz summary
+        # Print quiz summary. The pass threshold / percentage label is pure logic
+        # shared with run_quizzes_v2 via quiz_status.summarize_quiz (tested).
         total = len(result["questions"])
         if total > 0:
-            pct = (result["score"] / total) * 100
-            status = "PASSED" if pct >= 70 else f"{pct:.0f}%"
-            print(f"    → {result['score']}/{total} ({status})", flush=True)
-            if pct >= 70:
+            summary = summarize_quiz(result["score"], total)
+            print(f"    → {result['score']}/{total} ({summary.status})", flush=True)
+            if summary.passed:
                 result["completed"] = True
 
     except Exception as e:
