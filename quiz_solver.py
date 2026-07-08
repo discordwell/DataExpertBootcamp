@@ -6,7 +6,12 @@ from playwright.async_api import async_playwright
 
 from common import CDP_PORT, CDP_URL, DATA_DIR, lesson_url
 from quiz_heuristics import get_answer
-from quiz_status import interpret_answer_result, is_quiz_complete, parse_question_progress
+from quiz_status import (
+    interpret_answer_result,
+    is_quiz_complete,
+    parse_mc_question,
+    parse_question_progress,
+)
 
 
 async def solve_quiz(slug: str, module_name: str = ""):
@@ -111,35 +116,21 @@ async def solve_quiz(slug: str, module_name: str = ""):
             current_q = progress.current
             total_q = progress.total
 
-            # Parse question and options
-            lines = [l.strip() for l in page_text.split('\n') if l.strip()]
-            question_text = ""
-            options = []
-
-            # Find question after "X% Complete"
-            for i, line in enumerate(lines):
-                if "% Complete" in line and i + 1 < len(lines):
-                    question_text = lines[i + 1]
-                    break
-
-            # Find options between "Single/Multiple Choice" and "Show Hint"
-            in_options = False
-            for line in lines:
-                if "Single Choice" in line or "Multiple Choice" in line:
-                    in_options = True
-                    continue
-                if in_options:
-                    if "Show Hint" in line or "Check Answer" in line:
-                        break
-                    if line and line not in ["Notes", "Quiz", "Previous", "Next", "Module"]:
-                        options.append(line)
-
-            options = options[:6]
-
-            if not question_text or not options:
+            # Parse the question and its options out of the page text. This is
+            # the shared, pure quiz_status.parse_mc_question reader (tested).
+            # It skips the "Single/Multiple Choice" type badge when locating
+            # the question — the inline parse it replaces took the line right
+            # after "% Complete" verbatim, so on the real modal layout it read
+            # the badge itself as the question and then offered the actual
+            # question as one of the clickable options.
+            parsed = parse_mc_question(page_text)
+            if parsed is None:
                 print(f"Parse error at Q{current_q}")
                 await page.screenshot(path=str(DATA_DIR / f"quiz_{slug}_error.png"))
                 break
+
+            question_text = parsed.question
+            options = parsed.options
 
             print(f"\nQ{current_q}/{total_q}: {question_text[:100]}")
             for i, opt in enumerate(options):

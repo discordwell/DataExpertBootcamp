@@ -122,6 +122,15 @@ Pure parsers for the Claude CLI's raw responses, used by `run_quizzes_v2.py`:
   SQL keyword, collapses to a single line, and validates it as SQL (or `None`).
 - `clean_text_response(response)` — strips a leading "Here is" / "My answer:" /
   "Response:" preamble.
+- `text_response_from_cli(returncode, stdout)` — turns a `claude -p` result into a
+  submittable free-text answer, or `None` on a failed call (non-zero exit, or
+  nothing left once stripped and cleaned) so the runner retries instead of
+  submitting. The inline handling it replaces returned truthy sentinel strings
+  ("Unable to generate response", "… - timeout") on failure — and fell back to
+  **stderr** when stdout was empty — which the runner then typed into the quiz's
+  textarea and submitted, spending the question's single graded attempt on
+  boilerplate (or on a CLI error message). It also never checked the exit code;
+  the contract now mirrors the SQL path's.
 
 This logic used to live inside the subprocess-calling solver functions where it
 could not be tested. Pulling it into a pure module (like `quiz_heuristics` and
@@ -141,6 +150,23 @@ runners:
   when no question is on screen). This `Question N of M` regex was inlined at four
   call sites across the runners (three in `run_quizzes_v2`, one in `quiz_solver`);
   centralizing it keeps the one pattern in a single tested place.
+- `question_advanced(answered, seen)` — whether the position parsed after
+  clicking Next is past the question just answered. The v2 runner's
+  next-question wait used to compare the new position against its 0-based
+  loop-iteration counter (`current > q_num + 1`), which drifts from the
+  on-screen question number after any stuck-wait or SQL/text iteration —
+  making the wait spin its full timeout after the next question had already
+  loaded (or break early on a quiz resumed mid-way). Comparing the two parsed
+  positions is exact.
+- `parse_mc_question(text)` — the text-based question/options reader:
+  `MCQuestion(question, options)` or `None` on a parse failure. The question is
+  the first substantial line in the few lines after `% Complete`, *skipping* the
+  `Single Choice`/`Multiple Choice` badge (the primary runner's proven selection
+  rule); the options are the lines between the badge and `Show Hint`/`Check
+  Answer`, minus the question line and nav labels, capped at 6. Extracted from
+  `quiz_solver`, whose inline copy had drifted: it took the line immediately
+  after `% Complete` verbatim — on the real modal layout, the badge itself — as
+  the question, and then offered the actual question as a clickable option.
 - `is_perfect_completion(text)` — the canonical "this quiz is already perfect,
   skip it" rule: a 100%-and-all-correct score, or a bare `(100%)` marker when no
   fraction is present.
@@ -240,7 +266,9 @@ logic and stay browser-free (no Playwright import required to run them):
   feedback/sample-data sections, and the 5+-option lettering fix.
 - `tests/test_quiz_parsing.py` — pins the Claude-response parsers: MC letter
   extraction, multi-select de-duplication (including letters beyond D), markdown
-  SQL-fence stripping, and preamble cleanup.
+  SQL-fence stripping, preamble cleanup, and the `text_response_from_cli`
+  failure contract (a failed CLI call is `None`, never a submittable-looking
+  sentinel string).
 - `tests/test_quiz_status.py` — pins the page-text interpreters: score parsing
   (including the date-isn't-a-score regression), the perfect-completion skip
   rule, the status classifier's five outcomes, quiz-completion detection, the
@@ -248,8 +276,11 @@ logic and stay browser-free (no Playwright import required to run them):
   grader strings, the `does not match` guard, and that a bare un-banged `Correct`
   is not a pass), the `interpret_text_result` free-form verdict (the wider
   positive vocabulary, and that an `Incorrect` / `try again` vetoes a stray
-  `good`), and `parse_question_progress` (including a differential check against
-  the exact inline `Question N of M` regex the runners used before extraction).
+  `good`), `parse_question_progress` (including a differential check against
+  the exact inline `Question N of M` regex the runners used before extraction),
+  `question_advanced` (including the loop-counter off-by-one it replaces), and
+  `parse_mc_question` (both modal layouts, the badge-is-not-the-question and
+  question-is-not-an-option fixes, the hint/nav exclusions, and the option cap).
 - `tests/test_quizzes.py` — guards the curriculum invariants: eight weeks, fifty
   quizzes, unique slugs, and a flat `ALL_QUIZZES` that matches the week grouping.
 - `tests/test_common.py` — verifies cookie conversion, session setup, and the
@@ -259,3 +290,8 @@ logic and stay browser-free (no Playwright import required to run them):
   challenge/quiz/lesson href pattern, that only root-relative paths match, and
   the order-preserving de-duplication (replacing the old non-deterministic
   `list(set(...))`).
+
+Because the suite is browser-free it also runs in CI:
+`.github/workflows/tests.yml` executes it on every push/PR, plus a
+`python -m compileall` pass so syntax errors in the browser-bound runners and
+scrapers (which the tests deliberately don't import) still fail the build.

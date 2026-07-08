@@ -88,16 +88,24 @@ the heuristic's option-selection behavior, exercise every `quiz_sql` template br
 (research-context injection, single/multi-select wording, SQL column normalization,
 optional feedback/sample-data sections, and the 5+-option lettering fix), pin the
 `quiz_parsing` edge cases (multi-select de-duplication, markdown SQL fences, preamble
-stripping), pin the
+stripping, and the `text_response_from_cli` failure contract — a failed CLI call is
+`None`, never a submittable-looking sentinel string), pin the
 `quiz_status` interpreters (score parsing — including not mistaking a date like
 `26/12/2025` for a score — the perfect-skip rule, the status classifier, the
 shared `interpret_answer_result` grader-verdict reader, its free-form
 `interpret_text_result` counterpart where an `Incorrect` vetoes a stray `good`,
-and the `Question N of M` `parse_question_progress` reader the runners share),
+the `Question N of M` `parse_question_progress` reader the runners share, the
+`question_advanced` next-question check, and the text-based `parse_mc_question`
+question/option reader — including that the `Single Choice` badge is never taken
+as the question text),
 pin `scraper.extract_challenge_links` (the link pattern and its order-preserving
 de-duplication), and
 guard the curriculum invariants (unique slugs, the flat list matching the week
 grouping).
+
+The same suite (plus a `compileall` pass over the browser-bound scripts the tests
+don't import) runs in GitHub Actions on every push — see
+[`.github/workflows/tests.yml`](.github/workflows/tests.yml).
 
 ## Responsible use
 

@@ -19,7 +19,7 @@ Like ``quiz_heuristics`` / ``quiz_sql`` / ``quiz_parsing``, this module is
 browser-free, so it is covered directly by ``tests/test_quiz_status.py``.
 """
 import re
-from typing import NamedTuple, Optional, Tuple
+from typing import List, NamedTuple, Optional, Tuple
 
 # Matches a quiz score like "5/5 (100%)". The trailing "(N%)" is REQUIRED, which
 # is what stops the pattern from matching a calendar date such as "26/12/2025"
@@ -83,6 +83,93 @@ def parse_question_progress(text: str) -> Optional[QuestionProgress]:
     if not m:
         return None
     return QuestionProgress(int(m.group(1)), int(m.group(2)))
+
+
+def question_advanced(answered: QuestionProgress, seen: Optional[QuestionProgress]) -> bool:
+    """Whether the page has moved past the question the runner just answered.
+
+    ``answered`` is the position parsed *before* answering; ``seen`` is the
+    position parsed after clicking Next (``None`` when no question is on screen,
+    e.g. mid-transition — which is not an advance).
+
+    The v2 runner's next-question wait used to compare the new position against
+    its 0-based loop-iteration counter (``current > q_num + 1``). That counter
+    drifts from the on-screen question number whenever an iteration is consumed
+    by a stuck-wait or by a SQL/text question, so after any hiccup the wait
+    either spun its full timeout after the next question had already loaded, or
+    broke early on a quiz resumed mid-way. Comparing the two parsed positions is
+    exact.
+    """
+    return seen is not None and seen.current > answered.current
+
+
+# The choice-type badge the quiz modal shows between the progress bar and the
+# question, and the navigation-control labels that also appear as bare lines in
+# the modal's innerText. The text-based question/option parser must skip both.
+CHOICE_LABELS = ("Single Choice", "Multiple Choice")
+_NAV_LINES = frozenset({"Notes", "Quiz", "Previous", "Next", "Module"})
+
+
+class MCQuestion(NamedTuple):
+    """A multiple-choice question read from the quiz modal's text: the question
+    line plus the option lines that follow it."""
+
+    question: str
+    options: List[str]
+
+
+def parse_mc_question(text: str, *, max_options: int = 6) -> Optional[MCQuestion]:
+    """Parse a multiple-choice question and its options out of quiz-modal text.
+
+    The modal's ``innerText`` reads roughly ``Question N of M`` / ``NN%
+    Complete`` / a ``Single Choice``/``Multiple Choice`` badge / the question /
+    the option lines / ``Show Hint`` / ``Check Answer``. This picks:
+
+    - ``question``: the first substantial line (> 10 chars) within the few lines
+      after ``% Complete``, skipping any line carrying a choice-type badge — the
+      same selection rule the primary runner's DOM parser uses.
+    - ``options``: the lines after the badge up to ``Show Hint`` /
+      ``Check Answer``, excluding the question line itself and the surrounding
+      navigation labels, capped at ``max_options``.
+
+    Returns ``None`` when no question or no options could be found (the caller
+    treats that as a parse error).
+
+    This logic was inlined — untested — in ``quiz_solver``, and that copy had
+    drifted from the proven runners: it took the line *immediately* after
+    ``% Complete`` as the question, so on the real modal layout it read the
+    ``Single Choice`` badge as the question text and then offered the actual
+    question as one of the clickable options.
+    """
+    lines = [line.strip() for line in text.split("\n") if line.strip()]
+
+    question = ""
+    for i, line in enumerate(lines):
+        if "% Complete" in line:
+            for candidate in lines[i + 1:i + 5]:
+                if any(label in candidate for label in CHOICE_LABELS):
+                    continue
+                if len(candidate) > 10:
+                    question = candidate
+                    break
+            break
+
+    options: List[str] = []
+    in_options = False
+    for line in lines:
+        if any(label in line for label in CHOICE_LABELS):
+            in_options = True
+            continue
+        if in_options:
+            if "Show Hint" in line or "Check Answer" in line:
+                break
+            if line != question and line not in _NAV_LINES:
+                options.append(line)
+    options = options[:max_options]
+
+    if not question or not options:
+        return None
+    return MCQuestion(question, options)
 
 
 def is_perfect_completion(text: str) -> bool:

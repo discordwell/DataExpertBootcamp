@@ -113,3 +113,26 @@ def clean_text_response(response: str) -> str:
     wants just the answer.
     """
     return re.sub(r'^(Here is |My answer:|Response:)\s*', '', response, flags=re.IGNORECASE)
+
+
+def text_response_from_cli(returncode: int, stdout: str) -> Optional[str]:
+    """Turn a ``claude -p`` invocation's result into a submittable text answer.
+
+    Returns the cleaned answer text, or ``None`` when the CLI produced nothing
+    usable — a non-zero exit, or a stdout that is empty once stripped and
+    cleaned. ``None`` tells the runner to retry the attempt (or, after its last
+    attempt, to move on without submitting) — mirroring how the SQL path treats
+    a failed CLI call.
+
+    This replaces inline handling in ``run_quizzes_v2`` that on failure returned
+    truthy sentinel strings ("Unable to generate response", "... - timeout") —
+    which the runner then typed into the quiz's textarea and *submitted*,
+    spending the question's single graded attempt on boilerplate — and that fell
+    back to **stderr** as the answer when stdout was empty, so a CLI error
+    message could be submitted as a design answer. It also never checked the
+    exit code.
+    """
+    if returncode != 0:
+        return None
+    response = clean_text_response(stdout.strip())
+    return response or None

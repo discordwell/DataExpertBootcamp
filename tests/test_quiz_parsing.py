@@ -7,7 +7,12 @@ unit-testable with no browser or CLI.
 """
 import pytest
 
-from quiz_parsing import clean_text_response, extract_sql, parse_mc_answer
+from quiz_parsing import (
+    clean_text_response,
+    extract_sql,
+    parse_mc_answer,
+    text_response_from_cli,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -145,3 +150,45 @@ class TestCleanTextResponse:
     def test_does_not_strip_similar_prefixes(self):
         # "Here islands" is not the "Here is " preamble (no following space match).
         assert clean_text_response("Here islands form slowly") == "Here islands form slowly"
+
+
+# ---------------------------------------------------------------------------
+# text_response_from_cli
+# ---------------------------------------------------------------------------
+
+class TestTextResponseFromCli:
+    def test_normal_answer_passes_through(self):
+        out = text_response_from_cli(0, "A fact table stores measurable events.\n")
+        assert out == "A fact table stores measurable events."
+
+    def test_preamble_is_cleaned(self):
+        out = text_response_from_cli(0, "My answer: partition by event date")
+        assert out == "partition by event date"
+
+    def test_nonzero_exit_returns_none(self):
+        # The old inline handling never checked the exit code; a failed CLI call
+        # whose stdout was empty fell back to *stderr* as the answer, so an
+        # error message could be typed into the quiz and submitted.
+        assert text_response_from_cli(1, "") is None
+
+    def test_nonzero_exit_ignores_stdout(self):
+        # Aligned with the SQL path: a non-zero exit is a failed attempt even if
+        # something was printed.
+        assert text_response_from_cli(2, "partial output before crash") is None
+
+    @pytest.mark.parametrize("stdout", ["", "   \n  "])
+    def test_empty_output_returns_none(self, stdout):
+        # The old inline handling returned the truthy sentinel "Unable to
+        # generate response" here, which the runner then submitted as the
+        # answer, spending the question's one graded attempt on boilerplate.
+        assert text_response_from_cli(0, stdout) is None
+
+    def test_preamble_only_output_returns_none(self):
+        # Nothing left once the conversational framing is stripped.
+        assert text_response_from_cli(0, "Response:") is None
+
+    def test_result_is_never_a_failure_sentinel(self):
+        # Regression guard on the contract itself: failures are None, never a
+        # submittable-looking string.
+        for rc, out in [(1, "x"), (0, ""), (0, "  "), (0, "My answer:")]:
+            assert text_response_from_cli(rc, out) is None

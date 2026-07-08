@@ -2,6 +2,43 @@
 
 ## Session Summaries (most recent first; keep 20)
 
+### 2026-07-02T21:00Z — Maintenance pass: two v2-runner bug fixes, quiz_solver's parser extracted, CI added
+Suite grew 248 → 275 green, still browser-free — and now enforced by CI.
+
+- **Bug fixed — failed text-response CLI calls were *submitted as answers*.**
+  `solve_text_response_with_claude` returned truthy sentinels on failure
+  ("Unable to generate response", "… - timeout") and even fell back to
+  **stderr** when stdout was empty — all of which the runner typed into the
+  textarea and submitted, spending the question's one graded attempt on
+  boilerplate (or a CLI error message). It also never checked the exit code.
+  New pure `quiz_parsing.text_response_from_cli(returncode, stdout)` → cleaned
+  answer or `None`; the caller already retries on `None` (and after the last
+  attempt moves on without submitting). Contract now mirrors the SQL path.
+  New `TestTextResponseFromCli` (7 cases incl. a "never a sentinel" guard).
+- **Bug fixed — next-question wait compared against the loop counter.** The v2
+  wait used `new_progress.current > q_num + 1`; `q_num` is the 0-based loop
+  iteration, which drifts from the on-screen number after any stuck-wait or
+  SQL/text iteration, so the wait spun its full 5 s after the next question had
+  loaded (or broke early on a mid-quiz resume). New pure
+  `quiz_status.question_advanced(answered, seen)` compares the two parsed
+  positions; the runner passes the `progress` it parsed before answering.
+  New `TestQuestionAdvanced` (6 cases incl. the off-by-one scenario itself).
+- **`quiz_status.parse_mc_question(text)` (new):** extracted quiz_solver's last
+  inline page-text parser (question after "% Complete", options between the
+  choice badge and "Show Hint"). The inline copy had drifted from the proven
+  runners: it took the line *immediately* after "% Complete" — on the real
+  modal layout, the "Single Choice" badge itself — as the question, then
+  offered the actual question as a clickable option. The helper adopts the
+  primary runner's selection rule (skip badge lines, first line > 10 chars in
+  the next 4) and excludes the question from the options.
+  New `TestParseMCQuestion` (13 cases, both modal layouts).
+- **CI (new):** `.github/workflows/tests.yml` — pytest on push/PR (python 3.12,
+  ubuntu) plus `compileall` so syntax errors in the browser-bound scripts the
+  tests don't import still fail the build. browser-cookie3 pulls pure-Python
+  jeepney on py≥3.7 Linux, so no native build risk.
+- Dead-code: removed v2's never-read `answer_idx`. Docs updated (README
+  testing section + ARCHITECTURE quiz_status/quiz_parsing/testing sections).
+
 ### 2026-06-24T12:00Z — Maintenance pass: extract+test the "Question N of M" reader; fix dead scraper helper
 Continued the "pure logic lives in one tested place / single source of truth"
 trajectory and cleaned up two smaller defects. Suite grew 229 → 248 green, still

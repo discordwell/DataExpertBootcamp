@@ -7,7 +7,7 @@ from datetime import datetime
 from playwright.async_api import async_playwright
 
 from common import CDP_URL, DATA_DIR, lesson_url
-from quiz_parsing import clean_text_response, extract_sql, parse_mc_answer
+from quiz_parsing import extract_sql, parse_mc_answer, text_response_from_cli
 from quiz_prompts import build_mc_prompt, build_sql_prompt, build_text_prompt
 from quiz_sql import generate_sql
 from quiz_status import (
@@ -18,6 +18,7 @@ from quiz_status import (
     is_quiz_complete,
     parse_question_progress,
     parse_score,
+    question_advanced,
 )
 from quizzes import ALL_QUIZZES, CURRICULUM
 
@@ -67,7 +68,15 @@ def solve_mc_with_claude(question: str, options: list, multi_select: bool = Fals
 
 
 def solve_text_response_with_claude(question: str, feedback: str = None) -> str:
-    """Use Claude CLI to answer a free-form text response question (design questions, etc.)."""
+    """Use Claude CLI to answer a free-form text response question (design questions, etc.).
+
+    Returns the cleaned answer text, or ``None`` when no usable answer was
+    produced — the caller retries on ``None`` (and, if every attempt fails,
+    moves on without submitting). Failures used to return truthy sentinel
+    strings ("Unable to generate response...") — or even *stderr* text when
+    stdout was empty — which were then typed into the quiz and submitted,
+    spending the question's single graded attempt on boilerplate.
+    """
 
     # Prompt construction is pure and unit tested in tests/test_quiz_prompts.py.
     prompt = build_text_prompt(question, feedback)
@@ -79,17 +88,12 @@ def solve_text_response_with_claude(question: str, feedback: str = None) -> str:
             text=True,
             timeout=60
         )
-        response = result.stdout.strip()
-        if not response:
-            response = result.stderr.strip()
-
-        # Clean up response - remove any leading "Here is" type phrasing
-        response = clean_text_response(response)
-
-        return response if response else "Unable to generate response"
+        # Turning the CLI result into a submittable answer (or None) is pure
+        # logic, unit tested in tests/test_quiz_parsing.py.
+        return text_response_from_cli(result.returncode, result.stdout)
     except subprocess.TimeoutExpired:
         print(f"         Claude timed out", flush=True)
-        return "Unable to generate response - timeout"
+        return None
     except Exception as e:
         print(f"         Claude exception: {e}", flush=True)
         return None
@@ -243,7 +247,6 @@ async def solve_quiz(page, slug: str, title: str) -> dict:
         for q_num in range(30):
             # Initialize for this question
             all_options_text = ""
-            answer_idx = 0
             answer_indices = [0]
             is_multi_select = False
 
@@ -932,7 +935,6 @@ async def solve_quiz(page, slug: str, title: str) -> dict:
                 print(f"         Asking Claude for MC answer...", flush=True)
                 # Use question_full to include any code snippets in the question
                 answer_indices = solve_mc_with_claude(question_full, options, multi_select=is_multi_select)
-                answer_idx = answer_indices[0] if answer_indices else 0  # For compatibility
 
                 # Format selected answers for display
                 selected_letters = [chr(65+i) for i in answer_indices]
@@ -1066,11 +1068,14 @@ async def solve_quiz(page, slug: str, title: str) -> dict:
                     result["completed"] = True
                     print("    Quiz Complete!", flush=True)
                     break
-                # Check if question changed by looking for different question number
-                new_progress = parse_question_progress(new_text)
-                if new_progress is not None:
-                    if new_progress.current > q_num + 1:  # Question number increased
-                        break
+                # Check whether the page has moved past the question we just
+                # answered (`progress`, parsed above). This used to compare
+                # against the loop-iteration counter (`current > q_num + 1`),
+                # which drifts from the on-screen question number after any
+                # stuck-wait or SQL/text iteration; the shared, tested
+                # quiz_status.question_advanced compares the parsed positions.
+                if question_advanced(progress, parse_question_progress(new_text)):
+                    break
                 await asyncio.sleep(1)
 
             if result.get("completed"):

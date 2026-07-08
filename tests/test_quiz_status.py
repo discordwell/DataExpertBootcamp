@@ -10,6 +10,7 @@ import pytest
 
 from quiz_status import (
     AnswerResult,
+    MCQuestion,
     QuestionProgress,
     Score,
     classify_status,
@@ -17,8 +18,10 @@ from quiz_status import (
     interpret_text_result,
     is_perfect_completion,
     is_quiz_complete,
+    parse_mc_question,
     parse_question_progress,
     parse_score,
+    question_advanced,
 )
 
 
@@ -350,3 +353,166 @@ class TestParseQuestionProgress:
             m = legacy.search(text)
             expected = QuestionProgress(int(m.group(1)), int(m.group(2))) if m else None
             assert parse_question_progress(text) == expected, text
+
+
+# ---------------------------------------------------------------------------
+# question_advanced
+# ---------------------------------------------------------------------------
+
+class TestQuestionAdvanced:
+    def test_next_question_is_an_advance(self):
+        assert question_advanced(QuestionProgress(2, 6), QuestionProgress(3, 6)) is True
+
+    def test_same_question_is_not_an_advance(self):
+        assert question_advanced(QuestionProgress(2, 6), QuestionProgress(2, 6)) is False
+
+    def test_earlier_question_is_not_an_advance(self):
+        # Defensive: a re-render showing an earlier position must not break the wait.
+        assert question_advanced(QuestionProgress(4, 6), QuestionProgress(1, 6)) is False
+
+    def test_none_is_not_an_advance(self):
+        # No "Question N of M" on screen (mid-transition or results page): the
+        # wait loop's separate completion check handles the results page; a bare
+        # None must not read as "advanced".
+        assert question_advanced(QuestionProgress(2, 6), None) is False
+
+    def test_skipping_ahead_counts_as_advanced(self):
+        assert question_advanced(QuestionProgress(2, 6), QuestionProgress(5, 6)) is True
+
+    def test_fixes_the_loop_counter_off_by_one(self):
+        # The scenario the old `current > q_num + 1` check got wrong: question 2
+        # was answered on loop iteration 2 (an earlier iteration was consumed by
+        # a stuck-wait), so the old check demanded current > 3 and kept spinning
+        # after question 3 had already loaded.
+        answered = QuestionProgress(2, 6)   # just answered Q2...
+        q_num = 2                           # ...on 0-based loop iteration 2
+        seen = QuestionProgress(3, 6)       # Q3 is now on screen
+        assert (seen.current > q_num + 1) is False  # old check: still waiting
+        assert question_advanced(answered, seen) is True  # new check: advanced
+
+
+# ---------------------------------------------------------------------------
+# parse_mc_question
+# ---------------------------------------------------------------------------
+
+# The realistic modal layout: the choice-type badge sits between "% Complete"
+# and the question, and the option lines run up to "Show Hint".
+REAL_MODAL = """\
+Data Modeling Quiz
+Question 2 of 6
+17% Complete
+Single Choice
+What is a slowly changing dimension?
+A dimension that changes over time and requires versioning
+A dimension that never changes
+A table with no primary key
+A fact table containing only measures
+Show Hint
+Check Answer"""
+
+
+class TestParseMCQuestion:
+    def test_realistic_modal(self):
+        parsed = parse_mc_question(REAL_MODAL)
+        assert parsed == MCQuestion(
+            "What is a slowly changing dimension?",
+            [
+                "A dimension that changes over time and requires versioning",
+                "A dimension that never changes",
+                "A table with no primary key",
+                "A fact table containing only measures",
+            ],
+        )
+
+    def test_badge_line_is_not_the_question(self):
+        # The bug the old quiz_solver inline parse had: the line right after
+        # "% Complete" is the "Single Choice" badge, and it took that as the
+        # question. The badge must be skipped.
+        assert parse_mc_question(REAL_MODAL).question != "Single Choice"
+
+    def test_question_line_is_not_an_option(self):
+        # ...and because the question follows the badge, the old parse also
+        # swept the question into the options list. It must be excluded.
+        parsed = parse_mc_question(REAL_MODAL)
+        assert parsed.question not in parsed.options
+
+    def test_question_before_badge_layout(self):
+        # Alternate layout: question between "% Complete" and the badge.
+        text = (
+            "Question 1 of 5\n20% Complete\n"
+            "Which property describes an idempotent pipeline?\n"
+            "Multiple Choice\n"
+            "Same result no matter how many times it runs\n"
+            "Runs exactly once\n"
+            "Check Answer"
+        )
+        parsed = parse_mc_question(text)
+        assert parsed.question == "Which property describes an idempotent pipeline?"
+        assert parsed.options == [
+            "Same result no matter how many times it runs",
+            "Runs exactly once",
+        ]
+
+    def test_options_stop_at_show_hint(self):
+        parsed = parse_mc_question(REAL_MODAL)
+        assert "Show Hint" not in parsed.options
+        assert "Check Answer" not in parsed.options
+
+    def test_options_stop_at_check_answer_when_no_hint(self):
+        text = (
+            "50% Complete\nSingle Choice\nWhat does ACID stand for in databases?\n"
+            "Atomicity, Consistency, Isolation, Durability\n"
+            "Availability, Consistency, Integrity, Distribution\n"
+            "Check Answer\nNot an option"
+        )
+        parsed = parse_mc_question(text)
+        assert parsed.options == [
+            "Atomicity, Consistency, Isolation, Durability",
+            "Availability, Consistency, Integrity, Distribution",
+        ]
+
+    def test_navigation_labels_are_not_options(self):
+        text = (
+            "10% Complete\nSingle Choice\nWhat is a fact table used for?\n"
+            "Notes\nStoring measures\nQuiz\nStoring dimensions\nPrevious\nNext\nModule\n"
+            "Show Hint"
+        )
+        parsed = parse_mc_question(text)
+        assert parsed.options == ["Storing measures", "Storing dimensions"]
+
+    def test_option_cap(self):
+        options = "\n".join(f"Option number {i}" for i in range(1, 9))
+        text = f"10% Complete\nSingle Choice\nWhich options apply to this question?\n{options}\nShow Hint"
+        parsed = parse_mc_question(text)
+        assert len(parsed.options) == 6
+        assert parsed.options[0] == "Option number 1"
+
+    def test_question_window_skips_short_lines(self):
+        # The question is the first line longer than 10 chars after the badge —
+        # short interstitial lines are skipped (same rule as the primary
+        # runner's DOM parser).
+        text = (
+            "33% Complete\nSingle Choice\n1 of 3\n"
+            "Which join returns every row from both tables?\n"
+            "FULL OUTER JOIN\nINNER JOIN\nShow Hint"
+        )
+        parsed = parse_mc_question(text)
+        assert parsed.question == "Which join returns every row from both tables?"
+
+    def test_no_percent_complete_marker_returns_none(self):
+        assert parse_mc_question("Single Choice\nA question?\nopt\nShow Hint") is None
+
+    def test_no_badge_means_no_options_returns_none(self):
+        assert parse_mc_question("50% Complete\nWhat is a data warehouse used for?") is None
+
+    def test_empty_text_returns_none(self):
+        assert parse_mc_question("") is None
+
+    def test_question_too_far_from_progress_marker_returns_none(self):
+        # The question must appear within the 4 lines after "% Complete";
+        # anything later is out of the window (mirrors the primary runner).
+        text = (
+            "50% Complete\nfiller a\nfiller b\nfiller c\nfiller d\n"
+            "The real question is way down here?\nSingle Choice\nan option line here\nShow Hint"
+        )
+        assert parse_mc_question(text) is None
