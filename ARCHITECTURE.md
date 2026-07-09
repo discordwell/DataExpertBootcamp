@@ -198,6 +198,17 @@ runners:
   the denominator without the numerator, understating the percentage and its
   `pct >= 70` pass gate; the SQL and MC paths already counted, and the text path
   now matches them.)
+- `tally_quiz_results(results)` — the **cross-quiz** sibling of `summarize_quiz`:
+  rolls a list of per-quiz result dicts up into a `ResultTally(passed,
+  total_questions, total_correct, pct)` (quizzes passed, questions answered,
+  correct among them, and the overall percentage). The `sum(...)` roll-up plus
+  the divide-by-zero-safe `(correct / questions * 100) if questions else 0`
+  percentage was duplicated in `run_quizzes_v2`'s final summary and
+  `run_all_quizzes`'s per-week summary; both call this now (printed output
+  byte-identical). Missing keys default to falsy/zero, so a bare error
+  placeholder (`{"slug", "title", "error"}`, which the v2 runner records when a
+  quiz raises) contributes nothing instead of raising `KeyError` — generalizing
+  the v2 summary's `.get()` handling to both runners.
 
 The `X/Y (Z%)` score regex was **inlined three times** inside `run_quizzes_v2`'s
 browser coroutines (the two already-completed checks in `solve_quiz` and the
@@ -293,9 +304,13 @@ logic and stay browser-free (no Playwright import required to run them):
   `question_advanced` (including the loop-counter off-by-one it replaces),
   `parse_mc_question` (both modal layouts, the badge-is-not-the-question and
   question-is-not-an-option fixes, the hint/nav exclusions, and the option cap),
-  and `summarize_quiz` (the 70% pass boundary, the rounded-percent label, the
+  `summarize_quiz` (the 70% pass boundary, the rounded-percent label, the
   divide-by-zero-safe empty case, and a differential check against the exact
-  inline `pct >= 70` / `f"{pct:.0f}%"` logic both runners used before extraction).
+  inline `pct >= 70` / `f"{pct:.0f}%"` logic both runners used before extraction),
+  and `tally_quiz_results` (the cross-quiz roll-up: empty run, sums across
+  quizzes, the error-placeholder-counts-zero robustness, the completed-but-zero-
+  questions skip case, and a differential check against the inline `sum(...)` /
+  percentage block both runners used before extraction).
 - `tests/test_quizzes.py` — guards the curriculum invariants: eight weeks, fifty
   quizzes, unique slugs, and a flat `ALL_QUIZZES` that matches the week grouping.
 - `tests/test_common.py` — verifies cookie conversion, session setup, and the

@@ -1,7 +1,6 @@
 """Enhanced quiz runner with SQL writing support - Uses Claude for SQL solving."""
 import asyncio
 import json
-import re
 import subprocess
 from datetime import datetime
 from playwright.async_api import async_playwright
@@ -20,6 +19,7 @@ from quiz_status import (
     parse_score,
     question_advanced,
     summarize_quiz,
+    tally_quiz_results,
 )
 from quizzes import ALL_QUIZZES, CURRICULUM
 
@@ -845,8 +845,11 @@ async def solve_quiz(page, slug: str, title: str) -> dict:
                     return match ? match[1].trim() : text.substring(0, 500);
                 }""")
 
-                # Iterative solving loop for text responses
-                feedback = None
+                # Attempt loop for text responses. The text grader is one-shot —
+                # clicking Check Answer sets `submitted` and breaks the loop — so
+                # the only reason to re-attempt is a failed CLI call (`response`
+                # is None below), where there is no grader feedback to fold in.
+                # Hence no feedback plumbing here (unlike the iterative SQL path).
                 submitted = False
                 solved = False
                 max_attempts = 3  # Text responses typically need fewer iterations
@@ -856,7 +859,7 @@ async def solve_quiz(page, slug: str, title: str) -> dict:
                         break
 
                     print(f"         Attempt {attempt + 1}/{max_attempts}: Asking Claude...", flush=True)
-                    response = solve_text_response_with_claude(full_question, feedback)
+                    response = solve_text_response_with_claude(full_question)
 
                     if not response:
                         print(f"         Claude failed to generate response", flush=True)
@@ -910,13 +913,8 @@ async def solve_quiz(page, slug: str, title: str) -> dict:
                         result["score"] += 1
                         solved = True
                     elif verdict.incorrect:
-                        # Extract feedback if available (kept for parity; the grader
-                        # is one-shot, so this only annotates the recorded failure).
-                        feedback_match = re.search(r'(feedback|suggestion|hint)[:\s]*([^\n]+)', result_text, re.IGNORECASE)
-                        if feedback_match:
-                            feedback = feedback_match.group(2)
-                        else:
-                            feedback = "Your answer was marked incorrect. Please provide more detail or a different approach."
+                        # One graded attempt per text question, so a miss is final;
+                        # just record it (the loop breaks on `submitted`).
                         print(f"         ✗ Incorrect", flush=True)
                     else:
                         print(f"         Result unclear, assuming submitted", flush=True)
@@ -1152,14 +1150,14 @@ async def main():
         except:
             pass
 
-    # Summary
-    passed = sum(1 for r in results["quizzes"] if r.get("completed", False))
-    total_q = sum(len(r.get("questions", [])) for r in results["quizzes"])
-    total_c = sum(r.get("score", 0) for r in results["quizzes"])
-    pct = (total_c / total_q * 100) if total_q > 0 else 0
+    # Summary. The cross-quiz roll-up (passed count, question/correct totals, and
+    # overall percentage) is pure logic shared with run_all_quizzes via
+    # quiz_status.tally_quiz_results (tested) — error placeholders without
+    # score/questions keys contribute zero, as this runner's inline .get() did.
+    tally = tally_quiz_results(results["quizzes"])
     print(f"\n{'='*50}", flush=True)
-    print(f"COMPLETE: {passed}/{len(ALL_QUIZZES)} passed", flush=True)
-    print(f"Questions: {total_c}/{total_q} correct ({pct:.0f}%)", flush=True)
+    print(f"COMPLETE: {tally.passed}/{len(ALL_QUIZZES)} passed", flush=True)
+    print(f"Questions: {tally.total_correct}/{tally.total_questions} correct ({tally.pct:.0f}%)", flush=True)
 
 
 async def check_quiz_status(page, slug: str, title: str) -> dict:

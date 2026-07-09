@@ -2,6 +2,39 @@
 
 ## Session Summaries (most recent first; keep 20)
 
+### 2026-07-09T00:00Z — Maintenance pass: extract+test the cross-quiz run tally; drop the flagged dead code
+Continued the "pure logic lives in one tested place / single source of truth"
+trajectory and cleared the item the last pass explicitly left for later. Suite
+grew 285 → 292 green, still browser-free. Code review (2 independent finder
+angles) returned no findings; printed output is byte-identical.
+
+- **`quiz_status.tally_quiz_results(results)` (new)** — the **cross-quiz**
+  sibling of `summarize_quiz`. Rolls a list of per-quiz result dicts up into a
+  `ResultTally(passed, total_questions, total_correct, pct)`. The `sum(...)`
+  roll-up + divide-by-zero-safe `(correct/questions*100) if questions else 0`
+  percentage was **duplicated** in `run_quizzes_v2`'s final summary and
+  `run_all_quizzes`'s per-week summary (and its final summary); all three now
+  call the helper. Uses `.get()` defaults, so a bare error placeholder
+  (`{"slug","title","error"}`, which v2 records when a quiz raises) counts as
+  zero instead of `KeyError` — generalizing v2's existing `.get()` handling to
+  run_all too. New `TestTallyQuizResults` (7 cases incl. empty run, error
+  placeholder, completed-but-zero-questions, and a differential check vs. the
+  exact inline block both runners used).
+- **Dead code cleared (the last pass's "left for later" note).** v2's
+  free-form **text-response** path had a dead `feedback`/retry branch: the text
+  grader is one-shot (a Check Answer sets `submitted=True`, which breaks the
+  attempt loop), so the `feedback` recomputed in the `elif verdict.incorrect`
+  branch was never re-read — the loop only re-attempts on a *failed CLI call*
+  (`response is None`), before any grader feedback exists. Removed the
+  recomputation and the now-vestigial `feedback` variable/plumbing in that
+  branch (the SQL path's separate, genuinely-iterative `feedback` is untouched;
+  `solve_text_response_with_claude`'s `feedback=None` param stays for the API).
+- **Unused imports removed:** `import re` from **both** `run_quizzes_v2.py`
+  (its only use was the deleted regex) and `run_all_quizzes.py` (already dead —
+  the `Question N of M` regex there lives inside a JS string, not Python).
+- Docs updated (README testing line + ARCHITECTURE quiz_status + testing
+  sections).
+
 ### 2026-07-08T00:00Z — Maintenance pass: fix the text-answer scoring bug, extract+test summarize_quiz
 First landed the prior pass's WIP (the two v2 bug fixes + `parse_mc_question` +
 CI) as commit `a3ac476`, then fixed a fresh bug and centralized the last

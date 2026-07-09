@@ -1,13 +1,12 @@
 """Run all DataExpert quizzes - Fixed with correct button selectors"""
 import asyncio
 import json
-import re
 from datetime import datetime
 from playwright.async_api import async_playwright
 
 from common import CDP_URL, DATA_DIR, lesson_url
 from quiz_heuristics import get_answer
-from quiz_status import interpret_answer_result, summarize_quiz
+from quiz_status import interpret_answer_result, summarize_quiz, tally_quiz_results
 from quizzes import CURRICULUM
 
 
@@ -286,12 +285,10 @@ async def run_all_quizzes():
                 with open(DATA_DIR / "quiz_progress.json", "w") as f:
                     json.dump(all_results, f, indent=2)
 
-            # Week summary
-            completed = sum(1 for r in week_results if r["completed"])
-            total_q = sum(len(r["questions"]) for r in week_results)
-            total_c = sum(r["score"] for r in week_results)
-            pct = (total_c/total_q*100) if total_q > 0 else 0
-            print(f"\n  WEEK SUMMARY: {completed}/{len(quizzes)} passed, {total_c}/{total_q} correct ({pct:.0f}%)", flush=True)
+            # Week summary. The passed/question/correct roll-up + percentage is
+            # pure logic shared with run_quizzes_v2 via quiz_status.tally_quiz_results.
+            week_tally = tally_quiz_results(week_results)
+            print(f"\n  WEEK SUMMARY: {week_tally.passed}/{len(quizzes)} passed, {week_tally.total_correct}/{week_tally.total_questions} correct ({week_tally.pct:.0f}%)", flush=True)
 
         await page.close()
 
@@ -303,8 +300,8 @@ async def run_all_quizzes():
     print("ALL QUIZZES COMPLETE!", flush=True)
     print('='*60, flush=True)
 
-    # Final summary
-    total_passed = sum(sum(1 for r in week if r["completed"]) for week in all_results["weeks"].values())
+    # Final summary (same shared roll-up, per week, then summed).
+    total_passed = sum(tally_quiz_results(week).passed for week in all_results["weeks"].values())
     total_quizzes = sum(len(week) for week in all_results["weeks"].values())
     print(f"Passed: {total_passed}/{total_quizzes} quizzes", flush=True)
 

@@ -14,6 +14,7 @@ from quiz_status import (
     MCQuestion,
     QuestionProgress,
     QuizSummary,
+    ResultTally,
     Score,
     classify_status,
     interpret_answer_result,
@@ -25,6 +26,7 @@ from quiz_status import (
     parse_score,
     question_advanced,
     summarize_quiz,
+    tally_quiz_results,
 )
 
 
@@ -588,3 +590,74 @@ class TestSummarizeQuiz:
             pct = (score / total) * 100
             expected = QuizSummary(pct, "PASSED" if pct >= 70 else f"{pct:.0f}%", pct >= 70)
             assert summarize_quiz(score, total) == expected, (score, total)
+
+
+def _quiz(completed, questions, score):
+    """A per-quiz result dict shaped like the runners build."""
+    return {"completed": completed, "questions": [None] * questions, "score": score}
+
+
+class TestTallyQuizResults:
+    def test_empty_run(self):
+        # No quizzes: everything zero, and the percentage is a divide-by-zero-safe
+        # 0.0 (not a crash).
+        assert tally_quiz_results([]) == ResultTally(0, 0, 0, 0.0)
+
+    def test_single_perfect_quiz(self):
+        assert tally_quiz_results([_quiz(True, 5, 5)]) == ResultTally(1, 5, 5, 100.0)
+
+    def test_sums_across_quizzes(self):
+        # Two passed, one failed; totals accumulate and the percentage is over the
+        # grand totals (11/16), not an average of per-quiz percentages.
+        results = [_quiz(True, 5, 5), _quiz(True, 6, 5), _quiz(False, 5, 1)]
+        tally = tally_quiz_results(results)
+        assert tally == ResultTally(2, 16, 11, 11 / 16 * 100)
+
+    def test_error_placeholder_contributes_zero(self):
+        # The v2 runner appends a bare {"slug", "title", "error"} dict when a quiz
+        # raises. Missing completed/questions/score keys must count as zero, not
+        # raise KeyError — this is the .get() robustness the helper guarantees for
+        # both runners.
+        results = [_quiz(True, 4, 4), {"slug": "x", "title": "X", "error": "boom"}]
+        assert tally_quiz_results(results) == ResultTally(1, 4, 4, 100.0)
+
+    def test_completed_but_zero_questions(self):
+        # A quiz skipped as already-perfect is recorded completed with an empty
+        # questions list and score 1 (see solve_quiz's early return). It counts as
+        # passed but contributes no answered questions.
+        assert tally_quiz_results([{"completed": True, "questions": [], "score": 1}]) == ResultTally(
+            1, 0, 1, 0.0
+        )
+
+    def test_passed_counts_truthy_completed_only(self):
+        # `passed` counts quizzes whose `completed` is truthy; a missing or falsy
+        # flag does not count.
+        results = [_quiz(True, 1, 1), _quiz(False, 1, 0), {"questions": [None], "score": 0}]
+        assert tally_quiz_results(results).passed == 1
+
+    def test_matches_the_inline_logic_it_replaces(self):
+        # Differential check against the exact expressions the two runners computed
+        # inline before extraction (v2's summary used .get() defaults; run_all's
+        # used direct keys over its always-complete dicts). Over full result dicts
+        # the two agree, so pin the helper to that shared behavior.
+        runs = [
+            [],
+            [_quiz(True, 5, 5)],
+            [_quiz(True, 5, 5), _quiz(False, 6, 3)],
+            [_quiz(True, 7, 7), _quiz(True, 3, 3), _quiz(False, 10, 6)],
+            [_quiz(False, 8, 0), _quiz(True, 1, 1)],
+        ]
+        for results in runs:
+            passed = sum(1 for r in results if r.get("completed", False))
+            total_q = sum(len(r.get("questions", [])) for r in results)
+            total_c = sum(r.get("score", 0) for r in results)
+            pct = (total_c / total_q * 100) if total_q > 0 else 0
+            tally = tally_quiz_results(results)
+            assert (tally.passed, tally.total_questions, tally.total_correct) == (
+                passed,
+                total_q,
+                total_c,
+            ), results
+            # The old inline pct was int 0 for the empty case; the helper returns
+            # float 0.0, but both render identically under the runners' f"{pct:.0f}%".
+            assert f"{tally.pct:.0f}" == f"{pct:.0f}", results

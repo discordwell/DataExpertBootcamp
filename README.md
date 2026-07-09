@@ -97,8 +97,9 @@ shared `interpret_answer_result` grader-verdict reader, its free-form
 the `Question N of M` `parse_question_progress` reader the runners share, the
 `question_advanced` next-question check, the text-based `parse_mc_question`
 question/option reader — including that the `Single Choice` badge is never taken
-as the question text — and the shared `summarize_quiz` pass/percentage rule at
-the 70% boundary),
+as the question text — the shared `summarize_quiz` pass/percentage rule at
+the 70% boundary, and its cross-quiz sibling `tally_quiz_results`, the run-level
+roll-up both runners' summaries share),
 pin `scraper.extract_challenge_links` (the link pattern and its order-preserving
 de-duplication), and
 guard the curriculum invariants (unique slugs, the flat list matching the week

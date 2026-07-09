@@ -335,3 +335,39 @@ def summarize_quiz(score: int, num_questions: int) -> QuizSummary:
     passed = pct >= PASS_THRESHOLD_PCT
     status = "PASSED" if passed else f"{pct:.0f}%"
     return QuizSummary(pct, status, passed)
+
+
+class ResultTally(NamedTuple):
+    """A run-level roll-up over many per-quiz result dicts: how many quizzes
+    ``passed``, the ``total_questions`` answered across them, the ``total_correct``
+    among those, and the overall ``pct`` correct."""
+
+    passed: int
+    total_questions: int
+    total_correct: int
+    pct: float
+
+
+def tally_quiz_results(results) -> ResultTally:
+    """Aggregate a list of per-quiz result dicts into run-level totals.
+
+    Each ``result`` is the dict the runners build per quiz — ``completed`` (the
+    quiz passed), ``questions`` (the answered-question list), and ``score`` (the
+    correct count). Missing keys default to falsy/empty/zero, so a bare error
+    placeholder (``{"slug", "title", "error"}``, which the v2 runner records when
+    a quiz raises) contributes nothing rather than raising ``KeyError`` — this
+    generalizes the v2 summary's existing ``.get()`` handling to both runners.
+    ``pct`` is ``total_correct / total_questions`` as a percentage, and is
+    ``0.0`` when no questions were answered (no divide-by-zero).
+
+    The ``sum(...)`` roll-up plus the ``(correct / questions * 100) if questions
+    else 0`` percentage was duplicated in ``run_quizzes_v2``'s final summary and
+    ``run_all_quizzes``'s per-week summary; centralizing it here (the cross-quiz
+    sibling of :func:`summarize_quiz`'s single-quiz tally) keeps the one roll-up
+    rule in a single tested place.
+    """
+    passed = sum(1 for r in results if r.get("completed", False))
+    total_questions = sum(len(r.get("questions", [])) for r in results)
+    total_correct = sum(r.get("score", 0) for r in results)
+    pct = (total_correct / total_questions * 100) if total_questions else 0.0
+    return ResultTally(passed, total_questions, total_correct, pct)
